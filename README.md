@@ -80,7 +80,7 @@ echo $form->field($model, 'passport')->widget(PassportScanner::class, [
         'passportImg' => '#traveler-passport-image',
     ],
     'scannerOptions' => [
-        'dateFormat' => 'ymd',
+        'dateFormat' => 'Y-m-d',
         'countryNames' => [
             'MY' => 'Malaysia',
             'SG' => 'Singapore',
@@ -96,6 +96,16 @@ input if you want the selected or captured image attached to the form.
 `countryNames`.
 From v0.7.0, rendering the widget always enables its scanner controls;
 the earlier availability check has been removed.
+
+`dateFormat` uses [PHP `date_format()` tokens](https://www.php.net/manual/en/datetime.format.php)
+for both `dob` and `expiry`. For example, `Y/m/d` gives `1974/08/12`,
+`y/m/d` gives `74/08/12`, and `d m y` gives `12 08 74`. Separators and text can
+be placed anywhere; prefix a format letter with `\` to print it literally.
+The default is `Y-m-d`, which is required for native HTML `type="date"` fields.
+MRZ dates have no time or timezone, so PHP time and timezone tokens represent
+midnight UTC. The older `ymd` and `dmy` settings still produce their original
+`Y-m-d` and `d/m/Y` outputs.
+PHP-style formatting is available from v0.8.0.
 
 | Field key | Scanned value |
 | --- | --- |

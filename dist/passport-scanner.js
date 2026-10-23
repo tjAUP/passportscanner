@@ -108,7 +108,7 @@
                 '</div>' +
             '</div>';
 
-        config.dateFormat = config.dateFormat || 'ymd';
+        config.dateFormat = config.dateFormat || 'Y-m-d';
         config.countryNames = config.countryNames || {};
         config.fields = config.fields || {};
         config.element = element;
@@ -240,6 +240,56 @@
         }
     }
 
+    function formatPhpDate(date, format) {
+        // MRZ dates have no time or timezone; time tokens use midnight UTC.
+        var year = date.getUTCFullYear();
+        var month = date.getUTCMonth() + 1;
+        var day = date.getUTCDate();
+        var weekday = date.getUTCDay();
+        var weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        var months = ['January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December'];
+        var pad = function(value, length) { return String(value).padStart(length, '0'); };
+        var yyyy = pad(year, 4);
+        var mm = pad(month, 2);
+        var dd = pad(day, 2);
+        var dayOfYear = Math.floor((date.getTime() - Date.UTC(year, 0, 1)) / 86400000);
+        var isoDate = new Date(date.getTime());
+        isoDate.setUTCDate(day + 4 - (weekday || 7));
+        var isoYear = isoDate.getUTCFullYear();
+        var isoWeek = Math.ceil((((isoDate.getTime() - Date.UTC(isoYear, 0, 1)) / 86400000) + 1) / 7);
+        var suffix = day % 100 >= 11 && day % 100 <= 13 ? 'th' :
+            ({ 1: 'st', 2: 'nd', 3: 'rd' }[day % 10] || 'th');
+        var tokens = {
+            d: dd, D: weekdays[weekday].slice(0, 3), j: String(day), l: weekdays[weekday],
+            N: String(weekday || 7), S: suffix, w: String(weekday), z: String(dayOfYear),
+            W: pad(isoWeek, 2),
+            F: months[month - 1], m: mm, M: months[month - 1].slice(0, 3),
+            n: String(month), t: String(new Date(Date.UTC(year, month, 0)).getUTCDate()),
+            L: String(year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 1 : 0),
+            o: String(isoYear), X: '+' + yyyy, x: yyyy, Y: yyyy, y: yyyy.slice(-2),
+            a: 'am', A: 'AM', B: '041', g: '12', G: '0', h: '12', H: '00',
+            i: '00', s: '00', u: '000000', v: '000',
+            e: 'UTC', I: '0', O: '+0000', P: '+00:00', p: 'Z', T: 'UTC', Z: '0',
+            c: yyyy + '-' + mm + '-' + dd + 'T00:00:00+00:00',
+            r: weekdays[weekday].slice(0, 3) + ', ' + dd + ' ' + months[month - 1].slice(0, 3) +
+                ' ' + yyyy + ' 00:00:00 +0000',
+            U: String(Math.floor(date.getTime() / 1000))
+        };
+        var result = '';
+        for (var index = 0; index < format.length; index++) {
+            var character = format.charAt(index);
+            if (character === '\\' && index + 1 < format.length) {
+                result += format.charAt(++index);
+            } else if (Object.prototype.hasOwnProperty.call(tokens, character)) {
+                result += tokens[character];
+            } else {
+                result += character;
+            }
+        }
+        return result;
+    }
+
     function parseMrzDate(value, isBirthDate, dateFormat) {
         if (!/^\d{6}$/.test(value)) return '';
         var yearPart = parseInt(value.slice(0, 2), 10);
@@ -250,10 +300,8 @@
         var date = new Date(Date.UTC(year, month - 1, day));
         if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return '';
 
-        var yyyy = String(year);
-        var mm = String(month).padStart(2, '0');
-        var dd = String(day).padStart(2, '0');
-        return dateFormat === 'dmy' ? dd + '/' + mm + '/' + yyyy : yyyy + '-' + mm + '-' + dd;
+        var format = dateFormat === 'ymd' ? 'Y-m-d' : dateFormat === 'dmy' ? 'd/m/Y' : dateFormat;
+        return formatPhpDate(date, typeof format === 'string' && format ? format : 'Y-m-d');
     }
 
     function mrzCheckDigit(value) {

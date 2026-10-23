@@ -24,10 +24,15 @@ const element = (attributes = {}) => ({
 
 const passport = element({
     'data-field-first-name': '#first-name',
+    'data-field-dob': '#dob',
+    'data-field-expiry': '#expiry',
+    'data-date-format': 'Y/m/d',
     'data-availability-url': '/old-availability-endpoint'
 });
 passport.tagName = 'INPUT';
 const firstName = element();
+const dob = element();
+const expiry = element();
 const controls = {};
 const document = {
     currentScript: { src: 'https://example.test/assets/passportscanner/passport-scanner.js' },
@@ -43,6 +48,8 @@ const document = {
         if (selector === 'input.js-tjaup-passportscanner-input') return passport;
         if (selector === '#passport') return passport;
         if (selector === '#first-name') return firstName;
+        if (selector === '#dob') return dob;
+        if (selector === '#expiry') return expiry;
         return controls[selector] ||= element();
     }
 };
@@ -88,6 +95,8 @@ vm.runInNewContext(script, context);
 
     assert.equal(passport.value, 'L898902C3');
     assert.equal(firstName.value, 'ANNA MARIA');
+    assert.equal(dob.value, '1974/08/12');
+    assert.equal(expiry.value, '2012/04/15');
     assert.equal(result.fields.passport, 'L898902C3');
     assert.equal(result.verifiedCount, 3);
     assert.equal(result.complete, true);
@@ -101,5 +110,38 @@ vm.runInNewContext(script, context);
     assert.equal(result, undefined);
     assert.equal(passport.value, 'L898902C3');
 
-    console.log('Input class auto-init filled fields and emitted a result only for a usable MRZ');
+    recognizedText = mrz;
+    const formats = [
+        ['y/m/d', '74/08/12'],
+        ['d m y', '12 08 74'],
+        ['l jS F Y \\a\\t H:i:s P', 'Monday 12th August 1974 at 00:00:00 +00:00'],
+        ['W o', '33 1974'],
+        [
+            'd D j l N S w z W F m M n t L o X x Y y a A B g G h H i s u v e I O P p T Z c r U',
+            '12 Mon 12 Monday 1 th 1 223 33 August 08 Aug 8 31 0 1974 +1974 1974 1974 74 ' +
+                'am AM 041 12 0 12 00 00 00 000000 000 UTC 0 +0000 +00:00 Z UTC 0 ' +
+                '1974-08-12T00:00:00+00:00 Mon, 12 Aug 1974 00:00:00 +0000 145497600'
+        ],
+        ['ymd', '1974-08-12'],
+        ['dmy', '12/08/1974']
+    ];
+    for (const [index, [format, expected]] of formats.entries()) {
+        passport.attributes['data-date-format'] = format;
+        await window.PassportScanner.initFromElement(passport);
+        const nextScanInput = controls[`#passport-scanner-${index + 2}-file`];
+        nextScanInput.files = [{ type: 'image/jpeg', name: 'passport.jpg' }];
+        nextScanInput.listeners.change.call(nextScanInput);
+        await new Promise(resolve => setTimeout(resolve, 0));
+        assert.equal(dob.value, expected, format);
+    }
+
+    delete passport.attributes['data-date-format'];
+    await window.PassportScanner.initFromElement(passport);
+    const defaultScanInput = controls[`#passport-scanner-${formats.length + 2}-file`];
+    defaultScanInput.files = [{ type: 'image/jpeg', name: 'passport.jpg' }];
+    defaultScanInput.listeners.change.call(defaultScanInput);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(dob.value, '1974-08-12');
+
+    console.log('MRZ scan filled fields, matched PHP date formats, and emitted a verified result');
 })().catch(error => { console.error(error); process.exitCode = 1; });
