@@ -26,8 +26,8 @@ Add this VCS repository to the consuming project's `composer.json`:
 ]
 ```
 
-Run `composer require vick4920/passportscanner:^0.3` after the `v0.3.0` tag
-has been pushed. Publish the installed `vendor/vick4920/passportscanner/dist/`
+Run `composer require tjaup/passportscanner:^0.3.1` after the `v0.3.1` tag
+has been pushed. Publish the installed `vendor/tjaup/passportscanner/dist/`
 directory through your framework's asset pipeline. Do not expose
 the whole `vendor` directory. Commit `composer.json` and `composer.lock`;
 deployments then use `composer install`.
@@ -38,7 +38,7 @@ Install directly from GitHub with
 `npm install github:tjAUP/passportscanner`. In a browser-targeted bundle:
 
 ```js
-import PassportScanner from '@vick4920/passportscanner';
+import PassportScanner from '@tjaup/passportscanner';
 ```
 
 The script also exposes `window.PassportScanner` when loaded with a regular

@@ -1,5 +1,5 @@
 {
-    "name": "vick4920/passportscanner",
+    "name": "tjaup/passportscanner",
     "description": "Browser-based passport MRZ scanner",
     "type": "library",
     "license": "proprietary"

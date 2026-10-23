@@ -1,6 +1,6 @@
 {
-    "name": "@vick4920/passportscanner",
-    "version": "0.3.0",
+    "name": "@tjaup/passportscanner",
+    "version": "0.3.1",
     "description": "Framework-independent browser passport MRZ scanner",
     "license": "UNLICENSED",
     "private": false,
