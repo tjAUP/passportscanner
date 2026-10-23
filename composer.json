@@ -1,0 +1,17 @@
+{
+    "name": "tbroker/passportscanner",
+    "description": "Browser-based passport MRZ scanner",
+    "type": "library",
+    "license": "proprietary",
+    "require": {
+        "php": ">=7.2"
+    },
+    "suggest": {
+        "yiisoft/yii2": "Required only when using the optional Yii2 asset bundle"
+    },
+    "autoload": {
+        "psr-4": {
+            "TBroker\\PassportScanner\\": "src/"
+        }
+    }
+}

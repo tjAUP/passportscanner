@@ -1,0 +1,971 @@
+(function(window, $) {
+    'use strict';
+
+    var nationalityToCountry = {
+        MYS: 'MY', SGP: 'SG', USA: 'US', GBR: 'GB', CAN: 'CA', AUS: 'AU', NZL: 'NZ',
+        CHN: 'CN', JPN: 'JP', KOR: 'KR', IND: 'IN', IDN: 'ID', THA: 'TH', VNM: 'VN',
+        PHL: 'PH', HKG: 'HK', TWN: 'TW', FRA: 'FR', DEU: 'DE', ITA: 'IT', ESP: 'ES',
+        NLD: 'NL', CHE: 'CH', AUT: 'AT', BEL: 'BE', SWE: 'SE', NOR: 'NO', DNK: 'DK',
+        FIN: 'FI', IRL: 'IE', PRT: 'PT', POL: 'PL', TUR: 'TR', ARE: 'AE', SAU: 'SA',
+        ZAF: 'ZA', BRA: 'BR', MEX: 'MX', RUS: 'RU', UKR: 'UA', PAK: 'PK', BGD: 'BD',
+        LKA: 'LK', NPL: 'NP', KHM: 'KH', LAO: 'LA', MMR: 'MM', MAC: 'MO'
+    };
+    var activeStream = null;
+    var activeVideo = null;
+    var activeUi = null;
+    var ocrLoader = null;
+    var removalObserver = null;
+    var autoScanTimer = null;
+    var autoScanBusy = false;
+    var autoScanWorkerPromise = null;
+    var cameraSequence = 0;
+    var scannerInstance = 0;
+    var initSequence = 0;
+    var ocrScriptUrl = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+
+    async function scannerAvailable(config) {
+        if (typeof config.available === 'function') {
+            try {
+                return await config.available() === true;
+            } catch (error) {
+                return false;
+            }
+        }
+        if (typeof config.available === 'boolean') return config.available;
+        if (!config.availabilityUrl) return true;
+        if (!window.fetch) return false;
+        try {
+            var response = await fetch(config.availabilityUrl, { credentials: 'same-origin', cache: 'no-store' });
+            if (!response.ok) return false;
+            var result = await response.json();
+            return result.available === true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function ensureScannerStyles() {
+        if (document.getElementById('passport-scanner-styles')) return;
+        var style = document.createElement('style');
+        style.id = 'passport-scanner-styles';
+        style.textContent = [
+            '.passport-scanner-field{margin:12px 0 16px}',
+            '.passport-scanner-field>label{display:block;margin-bottom:6px}',
+            '.passport-scanner-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
+            '.passport-scanner-tools>label{display:inline-flex;align-items:center}',
+            '.passport-scanner-tools .btn{margin:0;text-transform:none;font-size:13px}',
+            '.passport-scanner-file{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}',
+            '.passport-scanner-status{flex:1 1 240px;color:#7a728c;font-size:13px;line-height:1.4}',
+            '.passport-scanner-camera-view{position:relative;width:100%;aspect-ratio:4/3;max-height:min(60vh,560px);margin:10px 0;overflow:hidden;background:#171520}',
+            '.passport-scanner-preview{display:block;width:100%;height:100%;object-fit:cover}',
+            '.passport-scanner-guide{--guide-color:#fff;position:absolute;left:6%;right:6%;top:50%;transform:translateY(-50%);aspect-ratio:1.42;border:2px solid var(--guide-color);border-radius:6px;box-shadow:0 0 0 999px rgba(0,0,0,.22);pointer-events:none}',
+            '.passport-scanner-guide.is-invalid{--guide-color:#ff4d4f}',
+            '.passport-scanner-guide.is-steady{--guide-color:#35d07f}',
+            '.passport-scanner-guide-mrz{position:absolute;left:3%;right:3%;bottom:6%;height:18%;border-top:2px dashed var(--guide-color);border-bottom:2px dashed var(--guide-color)}',
+            '.passport-scanner-camera-panel[hidden],.passport-scanner-camera-open[hidden]{display:none!important}'
+        ].join('');
+        document.head.appendChild(style);
+    }
+
+    function buildScannerUi(config, element) {
+        var container = $(element);
+        if (!container.length) return null;
+        ensureScannerStyles();
+
+        var id = 'passport-scanner-' + (++scannerInstance);
+        container.html(
+            '<div class="passport-scanner-field">' +
+                '<label>Scan passport to fill details</label>' +
+                '<div class="passport-scanner-tools">' +
+                    '<button type="button" id="' + id + '-camera-open" class="btn btn-primary passport-scanner-camera-open" hidden><i class="fa fa-camera"></i> Use camera</button>' +
+                    '<button type="button" id="' + id + '-choose" class="btn btn-default"><i class="fa fa-image"></i> Choose image</button>' +
+                    '<input type="file" id="' + id + '-file" class="passport-scanner-file" accept=".jpg,.jpeg,.png,.webp">' +
+                    '<span id="' + id + '-status" class="passport-scanner-status" role="status" aria-live="polite">Image is processed in this browser. Check the filled details before saving.</span>' +
+                '</div>' +
+                '<div id="' + id + '-camera-panel" class="passport-scanner-camera-panel" hidden>' +
+                    '<div class="passport-scanner-camera-view">' +
+                        '<video id="' + id + '-video" class="passport-scanner-preview" autoplay playsinline></video>' +
+                        '<div id="' + id + '-guide" class="passport-scanner-guide" aria-hidden="true"><span class="passport-scanner-guide-mrz"></span></div>' +
+                    '</div>' +
+                    '<div class="passport-scanner-tools">' +
+                        '<button type="button" id="' + id + '-capture" class="btn btn-primary">Capture &amp; scan</button>' +
+                        '<button type="button" id="' + id + '-camera-close" class="btn btn-default">Close camera</button>' +
+                    '</div>' +
+                '</div>' +
+            '</div>'
+        );
+
+        config.dateFormat = config.dateFormat || 'ymd';
+        config.countryNames = config.countryNames || {};
+        config.cameraOpen = '#' + id + '-camera-open';
+        config.chooseButton = '#' + id + '-choose';
+        config.scanInput = '#' + id + '-file';
+        config.status = '#' + id + '-status';
+        config.cameraPanel = '#' + id + '-camera-panel';
+        config.guide = '#' + id + '-guide';
+        config.mrzGuide = config.guide + ' .passport-scanner-guide-mrz';
+        config.video = '#' + id + '-video';
+        config.captureButton = '#' + id + '-capture';
+        config.cameraClose = '#' + id + '-camera-close';
+        return config;
+    }
+
+    function setStatus(message, ui) {
+        ui = ui || activeUi;
+        if (ui) $(ui.status).text(message);
+    }
+
+    function setCameraGuideState(ui, state) {
+        $(ui.guide).removeClass('is-invalid is-steady')
+            .addClass(state === 'invalid' ? 'is-invalid' : state === 'steady' ? 'is-steady' : '');
+    }
+
+    function stopCamera() {
+        ++cameraSequence;
+        if (autoScanTimer) {
+            clearTimeout(autoScanTimer);
+            autoScanTimer = null;
+        }
+        var workerPromise = autoScanWorkerPromise;
+        autoScanWorkerPromise = null;
+        if (workerPromise) workerPromise.then(function(worker) { return worker.terminate(); }).catch(function() {});
+        if (activeStream) {
+            activeStream.getTracks().forEach(function(track) { track.stop(); });
+            activeStream = null;
+        }
+        if (activeVideo) {
+            activeVideo.srcObject = null;
+            activeVideo = null;
+        }
+        if (activeUi) $(activeUi.cameraPanel).prop('hidden', true).show();
+    }
+
+    function stop() {
+        ++initSequence;
+        stopCamera();
+    }
+
+    function ensureOcrLibrary() {
+        if (window.Tesseract) return Promise.resolve(window.Tesseract);
+        if (ocrLoader) return ocrLoader;
+
+        ocrLoader = new Promise(function(resolve, reject) {
+            var script = document.createElement('script');
+            script.src = ocrScriptUrl;
+            script.onload = function() { resolve(window.Tesseract); };
+            script.onerror = function() {
+                ocrLoader = null;
+                reject(new Error('Passport scanning could not load. Check your internet connection and try again.'));
+            };
+            document.head.appendChild(script);
+        });
+        return ocrLoader;
+    }
+
+    function getAutoScanWorker() {
+        if (!autoScanWorkerPromise) {
+            autoScanWorkerPromise = withTimeout(ensureOcrLibrary(), 30000, 'Passport scanner did not load in time.')
+                .then(function(ocr) {
+                    var pending = ocr.createWorker('eng');
+                    return withTimeout(pending, 45000, 'Passport OCR took too long to start.').catch(function(error) {
+                        pending.then(function(worker) { return worker.terminate(); }).catch(function() {});
+                        throw error;
+                    });
+                });
+            var currentPromise = autoScanWorkerPromise;
+            currentPromise.catch(function() {
+                if (autoScanWorkerPromise === currentPromise) autoScanWorkerPromise = null;
+            });
+        }
+        return autoScanWorkerPromise;
+    }
+
+    function withTimeout(promise, timeoutMs, message) {
+        var timer;
+        return Promise.race([
+            promise,
+            new Promise(function(resolve, reject) {
+                timer = setTimeout(function() { reject(new Error(message)); }, timeoutMs);
+            })
+        ]).finally(function() { clearTimeout(timer); });
+    }
+
+    async function normalizeSelectedImage(file) {
+        var isWebp = file.type === 'image/webp' || /\.webp$/i.test(file.name || '');
+        if (!isWebp) return file;
+        if (!window.createImageBitmap) throw new Error('This browser cannot prepare WebP images. Save the image as JPG or PNG and try again.');
+
+        var image = await createImageBitmap(file);
+        try {
+            var canvas = document.createElement('canvas');
+            canvas.width = image.width;
+            canvas.height = image.height;
+            canvas.getContext('2d').drawImage(image, 0, 0);
+            var blob = await new Promise(function(resolve) { canvas.toBlob(resolve, 'image/jpeg', 0.94); });
+            if (!blob) throw new Error('Could not convert this WebP image. Save it as JPG or PNG and try again.');
+            return new File([blob], (file.name || 'passport').replace(/\.webp$/i, '') + '.jpg', { type: 'image/jpeg' });
+        } finally {
+            image.close();
+        }
+    }
+
+    function parseMrzDate(value, isBirthDate, dateFormat) {
+        if (!/^\d{6}$/.test(value)) return '';
+        var yearPart = parseInt(value.slice(0, 2), 10);
+        var currentYearPart = new Date().getFullYear() % 100;
+        var year = isBirthDate && yearPart > currentYearPart ? 1900 + yearPart : 2000 + yearPart;
+        var month = parseInt(value.slice(2, 4), 10);
+        var day = parseInt(value.slice(4, 6), 10);
+        var date = new Date(Date.UTC(year, month - 1, day));
+        if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return '';
+
+        var yyyy = String(year);
+        var mm = String(month).padStart(2, '0');
+        var dd = String(day).padStart(2, '0');
+        return dateFormat === 'dmy' ? dd + '/' + mm + '/' + yyyy : yyyy + '-' + mm + '-' + dd;
+    }
+
+    function mrzCheckDigit(value) {
+        var weights = [7, 3, 1];
+        var total = 0;
+        for (var i = 0; i < value.length; i++) {
+            var character = value[i];
+            var number = character === '<' ? 0 : /\d/.test(character) ? parseInt(character, 10) : character.charCodeAt(0) - 55;
+            total += number * weights[i % weights.length];
+        }
+        return String(total % 10);
+    }
+
+    function findMrzLines(text) {
+        var lines = text.toUpperCase().split(/\r?\n/).map(function(line) {
+            return line.replace(/[«‹〈]/g, '<').replace(/[^A-Z0-9<]/g, '');
+        }).filter(Boolean);
+
+        for (var i = 0; i < lines.length; i++) {
+            var start = lines[i].search(/P(?:<|[A-Z])[A-Z]{3}/);
+            if (start < 0) continue;
+            var firstLine = lines[i].slice(start);
+            var nextIndex = i + 1;
+            var secondLine = '';
+
+            if (firstLine.length >= 70) {
+                secondLine = firstLine.slice(44);
+                firstLine = firstLine.slice(0, 44);
+            } else {
+                while (firstLine.length < 25 && nextIndex < lines.length && !/^[0-9]/.test(lines[nextIndex])) {
+                    firstLine += lines[nextIndex++];
+                }
+                while (nextIndex < lines.length && secondLine.length < 20) {
+                    if (/P(?:<|[A-Z])[A-Z]{3}/.test(lines[nextIndex])) break;
+                    secondLine += lines[nextIndex++];
+                }
+            }
+
+            if (firstLine.length < 20 || secondLine.length < 20) continue;
+            return [
+                firstLine.padEnd(44, '<').slice(0, 44),
+                secondLine.padEnd(44, '<').slice(0, 44)
+            ];
+        }
+        for (var j = 0; j < lines.length; j++) {
+            if (lines[j].length >= 20 && Object.keys(nationalityToCountry).some(function(code) {
+                var index = lines[j].indexOf(code, 8);
+                return index >= 8 && index <= 13;
+            })) {
+                return ['', lines[j].padEnd(44, '<').slice(0, 44)];
+            }
+        }
+        return null;
+    }
+
+    function findMrzNameLine(text) {
+        var lines = text.toUpperCase().split(/\r?\n/);
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].replace(/[«‹〈]/g, '<').replace(/[^A-Z0-9<]/g, '');
+            var start = line.search(/P(?:<|[A-Z])[A-Z]{3}/);
+            if (start >= 0 && line.length - start >= 12) return line.slice(start, start + 44).padEnd(44, '<');
+        }
+        return '';
+    }
+
+    async function prepareMrzCrop(file, region) {
+        var image = await createImageBitmap(file);
+        try {
+            var cropX = region ? Math.max(0, Math.min(image.width - 1, Math.round(image.width * region.left))) : 0;
+            var cropY = region ? Math.max(0, Math.min(image.height - 1, Math.round(image.height * region.top))) : Math.round(image.height * 0.78);
+            var cropWidth = region ? Math.round(image.width * region.width) : image.width;
+            var cropHeight = region ? Math.round(image.height * region.height) : image.height - cropY;
+            cropWidth = Math.max(1, Math.min(cropWidth, image.width - cropX));
+            cropHeight = Math.max(1, Math.min(cropHeight, image.height - cropY));
+            var scale = Math.min(4, Math.max(2, 2400 / cropWidth));
+            var canvas = document.createElement('canvas');
+            canvas.width = Math.round(cropWidth * scale);
+            canvas.height = Math.round(cropHeight * scale);
+            var context = canvas.getContext('2d');
+            context.filter = 'grayscale(1) contrast(1.5)';
+            context.drawImage(image, cropX, cropY, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);
+            var blob = await new Promise(function(resolve) { canvas.toBlob(resolve, 'image/jpeg', 0.95); });
+            if (!blob) throw new Error('Could not prepare the passport image for scanning.');
+            return new File([blob], 'passport-mrz.jpg', { type: 'image/jpeg' });
+        } finally {
+            image.close();
+        }
+    }
+
+    async function prepareMrzNameCrop(file) {
+        var image = await createImageBitmap(file);
+        try {
+            var top = Math.round(image.height * 0.12);
+            var height = Math.round(image.height * 0.5);
+            var padding = Math.max(12, Math.round(height * 0.12));
+            var canvas = document.createElement('canvas');
+            canvas.width = image.width;
+            canvas.height = height + padding * 2;
+            var context = canvas.getContext('2d');
+            context.fillStyle = '#fff';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            context.drawImage(image, 0, top, image.width, height, 0, padding, image.width, height);
+            var blob = await new Promise(function(resolve) { canvas.toBlob(resolve, 'image/jpeg', 0.95); });
+            if (!blob) throw new Error('Could not prepare the passport name for scanning.');
+            return new File([blob], 'passport-name.jpg', { type: 'image/jpeg' });
+        } finally {
+            image.close();
+        }
+    }
+
+    async function rotateImage(file, degrees) {
+        var image = await createImageBitmap(file);
+        try {
+            var quarterTurn = degrees === 90 || degrees === 270;
+            var canvas = document.createElement('canvas');
+            canvas.width = quarterTurn ? image.height : image.width;
+            canvas.height = quarterTurn ? image.width : image.height;
+            var context = canvas.getContext('2d');
+            context.translate(canvas.width / 2, canvas.height / 2);
+            context.rotate(degrees * Math.PI / 180);
+            context.drawImage(image, -image.width / 2, -image.height / 2);
+            var blob = await new Promise(function(resolve) { canvas.toBlob(resolve, 'image/jpeg', 0.95); });
+            if (!blob) throw new Error('Could not rotate the passport image for scanning.');
+            return new File([blob], 'passport-rotated-' + degrees + '.jpg', { type: 'image/jpeg' });
+        } finally {
+            image.close();
+        }
+    }
+
+    function normalizeMrzNamePart(value) {
+        var parts = value.replace(/</g, ' ').trim().split(/\s+/).filter(Boolean);
+        while (parts.length > 1 && parts[0].length >= 5 && new Set(parts[0]).size <= 2) parts.shift();
+        if (parts.length > 1 && parts[0].length === 1 && parts[1].length >= 5) {
+            parts[1] = parts[0] + parts[1];
+            parts.shift();
+        }
+        return parts.join(' ').replace(/[^A-Z '-]/g, '').trim();
+    }
+
+    function parseMrzName(line) {
+        var field = line.slice(5).replace(/\s+/g, '').replace(/<+$/g, '');
+        var separator = field.indexOf('<<');
+        var parts;
+        if (separator >= 0) {
+            var surnamePart = field.slice(0, separator).replace(/</g, ' ').trim();
+            var givenNamePart = field.slice(separator + 2).replace(/</g, ' ').trim();
+            parts = [givenNamePart, surnamePart].filter(Boolean).join(' ').split(/\s+/);
+        } else {
+            parts = field.split(/<+/).map(function(part) { return part.trim(); }).filter(Boolean);
+        }
+
+        while (parts.length > 1 && parts[0].length >= 5 && new Set(parts[0]).size <= 2) parts.shift();
+        if (parts.length > 1 && parts[0].length === 1 && parts[1].length >= 5) {
+            parts[1] = parts[0] + parts[1];
+            parts.shift();
+        }
+        var fullName = parts.join(' ').replace(/[^A-Z '-]/g, '').trim();
+        var surname = separator >= 0 ? normalizeMrzNamePart(field.slice(0, separator)) : '';
+        var givenNames = separator >= 0 ? normalizeMrzNamePart(field.slice(separator + 2)) : fullName;
+
+        return {
+            fullName: fullName,
+            givenNames: givenNames,
+            surname: surname
+        };
+    }
+
+    function isReadableMrzName(line, fullName) {
+        var nameField = line.slice(5).replace(/<+$/g, '');
+        var parts = fullName.split(/\s+/).filter(Boolean);
+        return /[A-Z]{2,}<+[A-Z]{2,}/.test(nameField)
+            && parts.length >= 2 && parts.length <= 6 && parts.every(function(part) {
+                return part.length <= 20 && !/(.)\1{3,}/.test(part);
+            });
+    }
+
+    function useMrzNameLine(details, line) {
+        if (!details || !line || details.nameLooksReadable) return details;
+        var parsedName = parseMrzName(line);
+        if (!isReadableMrzName(line, parsedName.fullName)) return details;
+        details.fullName = parsedName.fullName;
+        details.givenNames = parsedName.givenNames;
+        details.surname = parsedName.surname;
+        details.nameLooksReadable = true;
+        details.score += 1;
+        return details;
+    }
+
+    function parseMrzDetails(mrz, ui) {
+        if (!mrz) return null;
+        var first = mrz[0];
+        var second = mrz[1];
+        if ((first && !/^P[<A-Z][A-Z]{3}/.test(first)) || second.length !== 44) return null;
+        var parsedName = parseMrzName(first);
+        var fullName = parsedName.fullName;
+        var normalizeMrzDigits = function(value) {
+            return value.replace(/[OQD]/g, '0').replace(/[IL]/g, '1').replace(/S/g, '5').replace(/B/g, '8');
+        };
+        var checkDigit = function(value, digit) {
+            var normalized = normalizeMrzDigits(digit);
+            return /^\d$/.test(normalized) && mrzCheckDigit(value) === normalized;
+        };
+        var nationalityIndex = -1;
+        Object.keys(nationalityToCountry).forEach(function(code) {
+            var index = second.indexOf(code, 8);
+            if (index >= 8 && index <= 13 && (nationalityIndex < 0
+                || Math.abs(index - 10) < Math.abs(nationalityIndex - 10))) nationalityIndex = index;
+        });
+        if (nationalityIndex < 0) nationalityIndex = 10;
+        var nationality = second.slice(nationalityIndex, nationalityIndex + 3);
+        var passportEnd = nationalityIndex - 1;
+        var birthStart = nationalityIndex + 3;
+        var expiryStart = birthStart + 8;
+        var passportField = second.slice(0, passportEnd);
+        var birthField = normalizeMrzDigits(second.slice(birthStart, birthStart + 6));
+        var expiryField = normalizeMrzDigits(second.slice(expiryStart, expiryStart + 6));
+        var passportValid = passportEnd === 9 && checkDigit(passportField, second[passportEnd]);
+        if (!passportValid && passportEnd === 9) {
+            var correctedPassportField = passportField.charAt(0) + normalizeMrzDigits(passportField.slice(1));
+            if (checkDigit(correctedPassportField, second[passportEnd])) {
+                passportField = correctedPassportField;
+                passportValid = true;
+            }
+        }
+        var passportNumber = passportField.replace(/</g, '');
+        var birthValid = checkDigit(birthField, second[birthStart + 6]);
+        var expiryValid = checkDigit(expiryField, second[expiryStart + 6]);
+        var dateOfBirth = birthValid ? parseMrzDate(birthField, true, ui.dateFormat) : '';
+        var passportExpiry = expiryValid ? parseMrzDate(expiryField, false, ui.dateFormat) : '';
+        var sexMarker = second.charAt(birthStart + 7);
+        var sex = sexMarker === 'M' || sexMarker === 'F' ? sexMarker : '';
+        var nameLooksReadable = isReadableMrzName(first, fullName);
+        passportValid = passportValid && passportNumber.length >= 5;
+        var verifiedCount = (passportValid ? 1 : 0) + (dateOfBirth ? 1 : 0) + (passportExpiry ? 1 : 0);
+        var score = verifiedCount * 2 + (nameLooksReadable ? 1 : 0);
+
+        return {
+            fullName: fullName,
+            givenNames: parsedName.givenNames,
+            surname: parsedName.surname,
+            passportNumber: passportNumber,
+            passportValid: passportValid,
+            nationality: nationality,
+            sex: sex,
+            dateOfBirth: dateOfBirth,
+            passportExpiry: passportExpiry,
+            nameLooksReadable: nameLooksReadable,
+            verifiedCount: verifiedCount,
+            score: score
+        };
+    }
+
+    function hasCompletePassportDetails(details) {
+        return Boolean(details && details.verifiedCount === 3 && details.nameLooksReadable);
+    }
+
+    function hasUsablePassportDetails(details) {
+        return Boolean(details && details.verifiedCount >= 2);
+    }
+
+    function isBetterMrzCandidate(candidate, current) {
+        if (!candidate) return false;
+        if (!current) return true;
+        if (hasCompletePassportDetails(candidate) !== hasCompletePassportDetails(current)) {
+            return hasCompletePassportDetails(candidate);
+        }
+        if (candidate.verifiedCount !== current.verifiedCount) return candidate.verifiedCount > current.verifiedCount;
+        return candidate.score > current.score;
+    }
+
+    function fillField(selector, value) {
+        if (selector && value) $(selector).val(value).trigger('input').trigger('change');
+    }
+
+    function applyPassportDetails(details, ui) {
+        if (details.nameLooksReadable) {
+            fillField(ui.fields.name, details.fullName);
+            fillField(ui.fields.firstName, details.givenNames);
+            fillField(ui.fields.lastName, details.surname);
+        }
+        if (details.passportValid) fillField(ui.fields.passport, details.passportNumber);
+        fillField(ui.fields.dob, details.dateOfBirth);
+        fillField(ui.fields.expiry, details.passportExpiry);
+        if (details.sex) {
+            fillField(ui.fields.gender, details.sex === 'M' ? 'male' : 'female');
+            fillField(ui.fields.title, details.sex === 'M' ? 'MR' : 'MS');
+        }
+
+        var countryCode = nationalityToCountry[details.nationality];
+        var countryName = countryCode && ui.countryNames[countryCode];
+        if (countryName) fillField(ui.fields.nationality, countryName);
+
+        setStatus(hasCompletePassportDetails(details)
+            ? 'Passport details filled. Please verify each field before saving.'
+            : 'Verified passport details filled. Check the image and enter any missing or incorrect details before saving.', ui);
+    }
+
+    function attachPassportImage(file, ui) {
+        var input = ui.fields.passportImg && $(ui.fields.passportImg).first()[0];
+        if (!input || !file || !window.DataTransfer) return false;
+        try {
+            var transfer = new DataTransfer();
+            transfer.items.add(file);
+            input.files = transfer.files;
+            ui.attachingPassportImage = true;
+            try {
+                $(input).trigger('change');
+            } finally {
+                ui.attachingPassportImage = false;
+            }
+            return Boolean(input.files && input.files[0] && input.files[0].name === file.name && input.files[0].size === file.size);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function captureCameraFrame(video) {
+        var preview = video.getBoundingClientRect();
+        var aspect = preview.width && preview.height ? preview.width / preview.height : 4 / 3;
+        var sourceWidth = Math.min(video.videoWidth, video.videoHeight * aspect);
+        var sourceHeight = sourceWidth / aspect;
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.min(1600, Math.round(sourceWidth));
+        canvas.height = Math.round(canvas.width / aspect);
+        canvas.getContext('2d').drawImage(video,
+            (video.videoWidth - sourceWidth) / 2, (video.videoHeight - sourceHeight) / 2,
+            sourceWidth, sourceHeight, 0, 0, canvas.width, canvas.height);
+        return canvas;
+    }
+
+    function measureMrzSharpness(canvas, region) {
+        var left = Math.round(canvas.width * (region ? region.left : 0));
+        var top = Math.round(canvas.height * (region ? region.top : 0.78));
+        var width = Math.max(2, Math.min(canvas.width - left, Math.round(canvas.width * (region ? region.width : 1))));
+        var height = Math.max(2, Math.min(canvas.height - top, Math.round(canvas.height * (region ? region.height : 0.22))));
+        var pixels = canvas.getContext('2d').getImageData(left, top, width, height).data;
+        var total = 0;
+        var count = 0;
+        for (var y = 2; y < height - 2; y += 4) {
+            for (var x = 2; x < width - 2; x += 4) {
+                var index = (y * width + x) * 4;
+                var horizontal = index + 8;
+                var vertical = index + width * 8;
+                var luminance = pixels[index] + pixels[index + 1] + pixels[index + 2];
+                total += Math.abs(luminance - pixels[horizontal] - pixels[horizontal + 1] - pixels[horizontal + 2]);
+                total += Math.abs(luminance - pixels[vertical] - pixels[vertical + 1] - pixels[vertical + 2]);
+                count++;
+            }
+        }
+        return count ? total / count : 0;
+    }
+
+    async function captureCameraSample(video, region) {
+        var canvas = captureCameraFrame(video);
+        var sharpness = measureMrzSharpness(canvas, region);
+        var blob = await new Promise(function(resolve) { canvas.toBlob(resolve, 'image/jpeg', 0.92); });
+        return blob ? { file: new File([blob], 'passport-camera.jpg', { type: 'image/jpeg' }), sharpness: sharpness } : null;
+    }
+
+    function isBetterHoldCandidate(candidate, current) {
+        if (!candidate) return false;
+        if (!current) return true;
+        if (candidate.nameLooksReadable !== current.nameLooksReadable) return candidate.nameLooksReadable;
+        return isBetterMrzCandidate(candidate, current);
+    }
+
+    function getCameraMrzRegion(ui) {
+        var video = $(ui.video)[0];
+        var mrz = $(ui.mrzGuide)[0];
+        if (!video || !mrz) return null;
+        var videoRect = video.getBoundingClientRect();
+        var mrzRect = mrz.getBoundingClientRect();
+        if (!videoRect.width || !videoRect.height || !mrzRect.width || !mrzRect.height) return null;
+        var xPadding = mrzRect.width * 0.05;
+        var yPadding = mrzRect.height * 0.25;
+        var left = Math.max(0, (mrzRect.left - videoRect.left - xPadding) / videoRect.width);
+        var top = Math.max(0, (mrzRect.top - videoRect.top - yPadding) / videoRect.height);
+        var right = Math.min(1, (mrzRect.right - videoRect.left + xPadding) / videoRect.width);
+        var bottom = Math.min(1, (mrzRect.bottom - videoRect.top + yPadding) / videoRect.height);
+        if (right <= left || bottom <= top) return null;
+        return { left: left, top: top, width: right - left, height: bottom - top };
+    }
+
+    async function scanImage(file, ui, options) {
+        options = options || {};
+        if (!file) return false;
+        if (!options.silent) setStatus('Reading passport MRZ...', ui);
+        var worker = options.worker;
+        try {
+            if (!worker) {
+                var ocr = await withTimeout(ensureOcrLibrary(), 30000, 'Passport scanner did not load in time. Check your connection and try again.');
+                var workerPromise = ocr.createWorker('eng');
+                try {
+                    worker = await withTimeout(workerPromise, 45000, 'Passport OCR took too long to start. Check your connection and try again.');
+                } catch (error) {
+                    workerPromise.then(function(createdWorker) { return createdWorker.terminate(); }).catch(function() {});
+                    throw error;
+                }
+            }
+            async function readNameLine(crop, details) {
+                if (!hasUsablePassportDetails(details) || details.nameLooksReadable || !worker.setParameters) return details;
+                try {
+                    await worker.setParameters({
+                        tessedit_pageseg_mode: 7,
+                        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<'
+                    });
+                    var nameCrop = await prepareMrzNameCrop(crop);
+                    var nameResult = await withTimeout(worker.recognize(nameCrop), options.camera ? 15000 : 45000,
+                        'Passport name OCR timed out.');
+                    if (activeUi === ui) useMrzNameLine(details, findMrzNameLine(nameResult.data.text || ''));
+                } catch (error) {
+                    // The verified fields remain usable when the optional name pass fails.
+                }
+                return details;
+            }
+            async function readOrientation(imageFile) {
+                var best = null;
+                var croppedImage = null;
+                if (options.camera && window.createImageBitmap) {
+                    if (worker.setParameters) {
+                        await worker.setParameters({ tessedit_pageseg_mode: 6, tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<' });
+                    }
+                    var cameraCrop = await prepareMrzCrop(imageFile, options.cropRegion);
+                    var cameraResult = await withTimeout(worker.recognize(cameraCrop), 15000, 'Passport OCR timed out.');
+                    if (activeUi !== ui) return null;
+                    best = parseMrzDetails(findMrzLines(cameraResult.data.text || ''), ui);
+                    if (hasUsablePassportDetails(best)) return readNameLine(cameraCrop, best);
+                    if (options.cropOnly) return best;
+                    croppedImage = cameraCrop;
+                }
+                // Crop-specific OCR settings persist on the Tesseract worker, so reset them for every pass.
+                if (worker.setParameters) {
+                    await worker.setParameters({ tessedit_pageseg_mode: 3, tessedit_char_whitelist: '' });
+                }
+                var result = await withTimeout(worker.recognize(imageFile), options.camera ? 15000 : 45000, 'Passport OCR timed out. Try a smaller or clearer image.');
+                if (activeUi !== ui) return null;
+                var fullDetails = parseMrzDetails(findMrzLines(result.data.text || ''), ui);
+                if (isBetterMrzCandidate(fullDetails, best)) best = fullDetails;
+                if (options.camera) return readNameLine(croppedImage, best);
+                if (hasUsablePassportDetails(best) && !best.nameLooksReadable && window.createImageBitmap) {
+                    croppedImage = await prepareMrzCrop(imageFile);
+                    return readNameLine(croppedImage, best);
+                }
+                if (!hasUsablePassportDetails(best) && window.createImageBitmap) {
+                    if (worker.setParameters) {
+                        await worker.setParameters({
+                            tessedit_pageseg_mode: 6,
+                            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<'
+                        });
+                    }
+                    croppedImage = await prepareMrzCrop(imageFile);
+                    result = await withTimeout(worker.recognize(croppedImage), 45000, 'Passport OCR timed out. Try a smaller or clearer image.');
+                    if (activeUi !== ui) return null;
+                    var croppedDetails = parseMrzDetails(findMrzLines(result.data.text || ''), ui);
+                    if (isBetterMrzCandidate(croppedDetails, best)) best = croppedDetails;
+                    if (!hasUsablePassportDetails(best) && worker.setParameters) {
+                        await worker.setParameters({ tessedit_pageseg_mode: 11 });
+                        result = await withTimeout(worker.recognize(croppedImage), 45000, 'Passport OCR timed out. Try a smaller or clearer image.');
+                        if (activeUi !== ui) return null;
+                        var sparseDetails = parseMrzDetails(findMrzLines(result.data.text || ''), ui);
+                        if (isBetterMrzCandidate(sparseDetails, best)) best = sparseDetails;
+                    }
+                }
+                return croppedImage ? readNameLine(croppedImage, best) : best;
+            }
+
+            var details = await readOrientation(file);
+            if (!options.camera && !hasUsablePassportDetails(details) && window.createImageBitmap) {
+                for (var rotation of [90, 180, 270]) {
+                    var rotatedImage = await rotateImage(file, rotation);
+                    var rotatedDetails = await readOrientation(rotatedImage);
+                    if (isBetterMrzCandidate(rotatedDetails, details)) details = rotatedDetails;
+                    if (hasUsablePassportDetails(details)) break;
+                    if (activeUi !== ui) return;
+                }
+            }
+            if (options.isCurrent && !options.isCurrent()) return false;
+            if (options.onCandidate) options.onCandidate(details);
+            if (!hasUsablePassportDetails(details)) {
+                if (options.autoCapture) return false;
+                throw new Error('Could not verify enough passport details. No fields were changed. Try a closer image or enter the details manually.');
+            }
+            if (options.previewOnly) return details;
+            applyPassportDetails(details, ui);
+            return true;
+        } catch (error) {
+            if (options.onCandidate && (!options.isCurrent || options.isCurrent())) options.onCandidate(null);
+            if (options.worker && /timed out/i.test((error && error.message) || '')) {
+                var failedWorker = autoScanWorkerPromise;
+                autoScanWorkerPromise = null;
+                if (failedWorker) failedWorker.then(function(currentWorker) { return currentWorker.terminate(); }).catch(function() {});
+            }
+            if (!options.silent && activeUi === ui) setStatus((error && error.message) || 'Passport scan failed. Choose a clearer image and try again.', ui);
+            return false;
+        } finally {
+            if (worker && !options.worker) await worker.terminate();
+        }
+    }
+
+    function scheduleAutoScan(ui, delay) {
+        if (autoScanTimer) clearTimeout(autoScanTimer);
+        var sequence = cameraSequence;
+        autoScanTimer = setTimeout(function() { autoScanFrame(ui, sequence); }, delay);
+    }
+
+    async function autoScanFrame(ui, sequence) {
+        if (activeUi !== ui || !activeVideo || sequence !== cameraSequence) return;
+        if (autoScanBusy) {
+            scheduleAutoScan(ui, 500);
+            return;
+        }
+        if (!activeVideo.videoWidth || !activeVideo.videoHeight) {
+            scheduleAutoScan(ui, 500);
+            return;
+        }
+
+        var video = activeVideo;
+        autoScanBusy = true;
+        var retryDelay = 1200;
+        var candidate = false;
+        try {
+            var cropRegion = getCameraMrzRegion(ui);
+            var initialSample = await captureCameraSample(video, cropRegion);
+            if (initialSample && activeUi === ui && activeVideo === video && sequence === cameraSequence) {
+                setStatus('Starting passport reader...', ui);
+                var worker = await getAutoScanWorker();
+                if (activeUi !== ui || activeVideo !== video || sequence !== cameraSequence) return;
+                setStatus('Reading passport MRZ...', ui);
+                var found = await scanImage(initialSample.file, ui, {
+                    camera: true,
+                    autoCapture: true,
+                    previewOnly: true,
+                    cropRegion: cropRegion,
+                    worker: worker,
+                    silent: true,
+                    isCurrent: function() { return activeUi === ui && activeVideo === video && sequence === cameraSequence; },
+                    onCandidate: function(details) {
+                        candidate = hasUsablePassportDetails(details);
+                        setCameraGuideState(ui, candidate ? 'steady' : 'invalid');
+                    }
+                });
+                if (found && activeUi === ui && activeVideo === video && sequence === cameraSequence) {
+                    var best = { sample: initialSample, details: found };
+                    var heldSamples = [];
+                    setCameraGuideState(ui, 'steady');
+                    setStatus('MRZ detected. Hold steady for 3 seconds.', ui);
+                    for (var i = 1; i <= 3; i++) {
+                        await new Promise(function(resolve) { setTimeout(resolve, 1000); });
+                        if (activeUi !== ui || activeVideo !== video || sequence !== cameraSequence) return;
+                        var heldSample = await captureCameraSample(video, cropRegion);
+                        if (heldSample) heldSamples.push(heldSample);
+                        if (i < 3) setStatus('Hold steady for ' + (3 - i) + ' more second' + (i === 2 ? '' : 's') + '.', ui);
+                    }
+                    if (!hasCompletePassportDetails(best.details)) {
+                        setStatus('Comparing passport captures...', ui);
+                        heldSamples.sort(function(a, b) { return b.sharpness - a.sharpness; });
+                        for (var j = 0; j < Math.min(2, heldSamples.length); j++) {
+                            if (activeUi !== ui || activeVideo !== video || sequence !== cameraSequence) return;
+                            try {
+                                worker = await getAutoScanWorker();
+                                var extraDetails = await scanImage(heldSamples[j].file, ui, {
+                                    camera: true,
+                                    autoCapture: true,
+                                    previewOnly: true,
+                                    cropOnly: true,
+                                    cropRegion: cropRegion,
+                                    worker: worker,
+                                    silent: true,
+                                    isCurrent: function() { return activeUi === ui && activeVideo === video && sequence === cameraSequence; }
+                                });
+                                if (extraDetails && isBetterHoldCandidate(extraDetails, best.details)) {
+                                    best = { sample: heldSamples[j], details: extraDetails };
+                                }
+                                if (hasCompletePassportDetails(best.details)) break;
+                            } catch (error) {
+                                // Keep the first verified frame if a later comparison cannot be read.
+                            }
+                        }
+                    }
+                    if (activeUi !== ui || activeVideo !== video || sequence !== cameraSequence) return;
+                    applyPassportDetails(best.details, ui);
+                    var attached = attachPassportImage(best.sample.file, ui);
+                    var complete = hasCompletePassportDetails(best.details);
+                    setStatus(!attached
+                        ? 'Passport details read, but the image could not be attached. Choose it in Passport Image before saving.'
+                        : complete
+                            ? 'Passport details and image filled. Verify each field before saving.'
+                            : 'Passport image captured. Some details were not read; fill the missing fields and verify before saving.', ui);
+                    stopCamera();
+                    return;
+                }
+            }
+        } catch (error) {
+            if (activeUi === ui && sequence === cameraSequence) setCameraGuideState(ui, 'invalid');
+            if (activeUi === ui && sequence === cameraSequence) setStatus((error && error.message) || 'Auto scan failed. Try Capture & scan or choose an image.', ui);
+            retryDelay = 5000;
+        } finally {
+            autoScanBusy = false;
+        }
+
+        if (activeUi === ui && activeVideo === video && sequence === cameraSequence) {
+            if (retryDelay === 1200) setStatus(candidate
+                ? 'MRZ detected. Hold the passport steady for auto capture.'
+                : 'MRZ not readable. Reposition both lines inside the guide.', ui);
+            scheduleAutoScan(ui, retryDelay);
+        }
+    }
+
+    function detectCamera(ui) {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices || !navigator.mediaDevices.getUserMedia) return;
+        navigator.mediaDevices.enumerateDevices().then(function(devices) {
+            if (devices.some(function(device) { return device.kind === 'videoinput'; })) {
+                if (activeUi === ui) $(ui.cameraOpen).prop('hidden', false).show();
+            }
+        }).catch(function() {});
+    }
+
+    async function init(config) {
+        config = config || {};
+        if (config.tesseractUrl && !ocrLoader) ocrScriptUrl = config.tesseractUrl;
+        var sequence = ++initSequence;
+        stopCamera();
+        activeUi = null;
+        var container = $(config.container).first()[0];
+        if (!container) return;
+        var slot = container.parentElement && container.parentElement.classList.contains('form-group')
+            && container.parentElement.children.length === 1 ? container.parentElement : container;
+        slot.hidden = true;
+        $(container).empty();
+        if (!await scannerAvailable(config)) return;
+        if (sequence !== initSequence || !document.documentElement.contains(container)) return;
+        var ui = buildScannerUi(config, container);
+        if (!ui) return;
+        slot.hidden = false;
+        activeUi = ui;
+
+        $(ui.cameraOpen).hide().off('.passportScanner');
+        $(ui.chooseButton).off('.passportScanner');
+        $(ui.scanInput).off('.passportScanner');
+        $(ui.captureButton).off('.passportScanner');
+        $(ui.cameraClose).off('.passportScanner');
+        $(ui.cameraOpen).on('click.passportScanner', async function() {
+            try {
+                stopCamera();
+                var stream = await navigator.mediaDevices.getUserMedia({
+                    audio: false,
+                    video: {
+                        facingMode: { ideal: 'environment' },
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    }
+                });
+                var video = document.querySelector(ui.video);
+                if (activeUi !== ui || !video || !document.documentElement.contains(video)) {
+                    stream.getTracks().forEach(function(track) { track.stop(); });
+                    return;
+                }
+                activeStream = stream;
+                activeVideo = video;
+                activeVideo.srcObject = activeStream;
+                setCameraGuideState(ui, 'neutral');
+                $(ui.cameraPanel).prop('hidden', false);
+                await activeVideo.play();
+                if (activeUi === ui) {
+                    setStatus('Looking for passport details. Keep the passport steady with the MRZ lines visible.', ui);
+                    scheduleAutoScan(ui, 700);
+                }
+            } catch (error) {
+                if (activeUi === ui) {
+                    stopCamera();
+                    setStatus((error && error.message) || 'Camera access was unavailable. Choose an image instead.', ui);
+                }
+            }
+        });
+        $(ui.cameraClose).on('click.passportScanner', stopCamera);
+        $(ui.chooseButton).on('click.passportScanner', function() {
+            var uploadInput = ui.fields.passportImg && $(ui.fields.passportImg).first()[0];
+            (uploadInput || $(ui.scanInput)[0]).click();
+        });
+        if (ui.fields.passportImg) {
+            $(ui.fields.passportImg).off('change.passportScanner').on('change.passportScanner', function() {
+                var file = this.files && this.files[0];
+                if (!file || activeUi !== ui || ui.attachingPassportImage) return;
+                if (file.type === 'application/pdf') {
+                    setStatus('PDF attached. Choose a JPG or PNG image to scan passport details.', ui);
+                    return;
+                }
+                scanImage(file, ui);
+            });
+        }
+        $(ui.captureButton).on('click.passportScanner', function() {
+            if (autoScanTimer) {
+                clearTimeout(autoScanTimer);
+                autoScanTimer = null;
+            }
+            if (!activeVideo || !activeVideo.videoWidth || !activeVideo.videoHeight) {
+                setStatus('Camera is not ready yet. Please wait and try again.', ui);
+                return;
+            }
+            var cropRegion = getCameraMrzRegion(ui);
+            var canvas = captureCameraFrame(activeVideo);
+            var captureSequence = cameraSequence;
+            canvas.toBlob(function(blob) {
+                if (activeUi !== ui || captureSequence !== cameraSequence) return;
+                stopCamera();
+                if (blob) {
+                    var imageFile = new File([blob], 'passport-camera.jpg', { type: 'image/jpeg' });
+                    var attached = attachPassportImage(imageFile, ui);
+                    scanImage(imageFile, ui, { camera: true, cropRegion: cropRegion }).then(function() {
+                        if (!attached && activeUi === ui) {
+                            setStatus('Passport details scanned, but the image could not be attached. Choose the image in Passport Image before saving.', ui);
+                        }
+                    });
+                }
+                else setStatus('Could not capture the image. Please try again or choose an image.', ui);
+            }, 'image/jpeg', 0.92);
+        });
+        $(ui.scanInput).on('change.passportScanner', async function() {
+            var file = this.files && this.files[0];
+            this.value = '';
+            if (!file) return;
+            try {
+                if (file.type === 'image/webp' || /\.webp$/i.test(file.name || '')) setStatus('Preparing WebP image...', ui);
+                var uploadFile = await normalizeSelectedImage(file);
+                if (activeUi !== ui) return;
+                if (!attachPassportImage(uploadFile, ui)) {
+                    setStatus('Image selected for scanning, but it could not be attached to the passport upload field. Please choose it there too.', ui);
+                }
+                scanImage(uploadFile, ui);
+            } catch (error) {
+                setStatus((error && error.message) || 'Could not prepare the selected image. Try a JPG or PNG image.', ui);
+            }
+        });
+
+        detectCamera(ui);
+        $(document).off('hidden.bs.modal.passportScanner').on('hidden.bs.modal.passportScanner', stop);
+        if (!removalObserver && document.body && window.MutationObserver) {
+            removalObserver = new MutationObserver(function() {
+                if (activeVideo && !document.documentElement.contains(activeVideo)) stopCamera();
+            });
+            removalObserver.observe(document.body, { childList: true, subtree: true });
+        }
+    }
+
+    window.PassportScanner = { init: init, stop: stop };
+})(window, window.jQuery);
