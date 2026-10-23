@@ -23,7 +23,23 @@
     var initSequence = 0;
     var activeUploadInput = null;
     var activeUploadListener = null;
-    var ocrScriptUrl = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    var scriptUrl = document.currentScript && document.currentScript.src;
+    var detectedAssetBaseUrl = scriptUrl ? new URL('.', scriptUrl).href : null;
+    var assetBaseUrl = detectedAssetBaseUrl;
+
+    function localAsset(path) {
+        if (!assetBaseUrl) throw new Error('Passport OCR assets are not configured. Set assetBaseUrl to the published dist directory.');
+        return new URL('ocr/' + path, assetBaseUrl).href;
+    }
+
+    function createOcrWorker(ocr) {
+        return ocr.createWorker('eng', 1, {
+            workerPath: localAsset('worker.min.js'),
+            corePath: localAsset('core/'),
+            langPath: localAsset('lang/'),
+            workerBlobURL: false
+        });
+    }
 
     function findElement(target) {
         return typeof target === 'string' ? document.querySelector(target) : target || null;
@@ -179,13 +195,23 @@
 
         ocrLoader = new Promise(function(resolve, reject) {
             var script = document.createElement('script');
-            script.src = ocrScriptUrl;
-            script.onload = function() { resolve(window.Tesseract); };
+            try {
+                script.src = localAsset('tesseract.min.js');
+            } catch (error) {
+                reject(error);
+                return;
+            }
+            script.onload = function() {
+                if (window.Tesseract) resolve(window.Tesseract);
+                else reject(new Error('The local Tesseract.js script did not initialize.'));
+            };
             script.onerror = function() {
-                ocrLoader = null;
-                reject(new Error('Passport scanning could not load. Check your internet connection and try again.'));
+                reject(new Error('Local passport OCR assets could not load. Check the published dist/ocr directory.'));
             };
             document.head.appendChild(script);
+        }).catch(function(error) {
+            ocrLoader = null;
+            throw error;
         });
         return ocrLoader;
     }
@@ -194,7 +220,7 @@
         if (!autoScanWorkerPromise) {
             autoScanWorkerPromise = withTimeout(ensureOcrLibrary(), 30000, 'Passport scanner did not load in time.')
                 .then(function(ocr) {
-                    var pending = ocr.createWorker('eng');
+                    var pending = createOcrWorker(ocr);
                     return withTimeout(pending, 45000, 'Passport OCR took too long to start.').catch(function(error) {
                         pending.then(function(worker) { return worker.terminate(); }).catch(function() {});
                         throw error;
@@ -645,8 +671,8 @@
         var worker = options.worker;
         try {
             if (!worker) {
-                var ocr = await withTimeout(ensureOcrLibrary(), 30000, 'Passport scanner did not load in time. Check your connection and try again.');
-                var workerPromise = ocr.createWorker('eng');
+                var ocr = await withTimeout(ensureOcrLibrary(), 30000, 'Local passport scanner did not load in time.');
+                var workerPromise = createOcrWorker(ocr);
                 try {
                     worker = await withTimeout(workerPromise, 45000, 'Passport OCR took too long to start. Check your connection and try again.');
                 } catch (error) {
@@ -874,7 +900,8 @@
 
     async function init(config) {
         config = config || {};
-        if (config.tesseractUrl && !ocrLoader) ocrScriptUrl = config.tesseractUrl;
+        var base = config.assetBaseUrl || detectedAssetBaseUrl;
+        assetBaseUrl = base ? new URL(String(base).endsWith('/') ? base : base + '/', document.baseURI).href : null;
         var sequence = ++initSequence;
         stopCamera();
         clearUploadListener();

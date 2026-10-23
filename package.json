@@ -1,12 +1,13 @@
 {
     "name": "@vick4920/passportscanner",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "description": "Framework-independent browser passport MRZ scanner",
     "license": "UNLICENSED",
     "private": false,
     "main": "dist/passport-scanner.js",
     "browser": "dist/passport-scanner.js",
     "files": [
-        "dist/passport-scanner.js"
+        "dist",
+        "THIRD_PARTY_NOTICES.md"
     ]
 }
