@@ -7,10 +7,10 @@ Yii.
 
 ## Install from GitHub
 
-Push this directory to a GitHub repository and create a release tag, for
-example `v0.1.0`. The repository must contain `composer.json`, `src/`, and
-`dist/` at its root. The Composer package name is
-`tbroker/passportscanner`; the GitHub account/repository name can differ.
+The source repository is
+[vick4920/passportscanner](https://github.com/vick4920/passportscanner).
+Push the local `main` branch and `v0.1.0` tag before installing it from
+GitHub. The Composer package name is `tbroker/passportscanner`.
 
 Add the repository to the consuming project's `composer.json`:
 
@@ -18,7 +18,7 @@ Add the repository to the consuming project's `composer.json`:
 "repositories": [
     {
         "type": "vcs",
-        "url": "https://github.com/YOUR-ACCOUNT/passportscanner"
+        "url": "https://github.com/vick4920/passportscanner"
     }
 ]
 ```
@@ -26,7 +26,7 @@ Add the repository to the consuming project's `composer.json`:
 Then run `composer require tbroker/passportscanner:^0.1`. Commit the
 consumer's `composer.json` and `composer.lock`; deployments can then run
 `composer install` to fetch the locked package version. Before a release
-tag exists, use `composer require tbroker/passportscanner:dev-main` for a
+tag is pushed, use `composer require tbroker/passportscanner:dev-main` for a
 temporary test instead. A private repository needs GitHub credentials
 configured for Composer on each machine that installs it.
 
