@@ -4,6 +4,7 @@ use TjAup\PassportScanner;
 use TjAup\PassportScanner\Yii2\PassportScannerAsset;
 use yii\base\Model;
 use yii\helpers\FileHelper;
+use yii\helpers\Json;
 use yii\web\AssetManager;
 use yii\web\View;
 use yii\widgets\ActiveForm;
@@ -96,6 +97,16 @@ try {
         $count++;
     }
 
+    $configStart = strpos($html, 'var config = ');
+    $configEnd = $configStart === false ? false : strpos($html, ';config.container', $configStart);
+    if ($configStart === false || $configEnd === false) {
+        throw new RuntimeException('The widget did not render scanner configuration.');
+    }
+    $configJson = substr($html, $configStart + strlen('var config = '), $configEnd - $configStart - strlen('var config = '));
+    $config = Json::decode($configJson);
+    if (($config['assetBaseUrl'] ?? null) !== $bundle->baseUrl . '/') {
+        throw new RuntimeException('The widget did not configure the published OCR asset URL.');
+    }
     $scriptUrl = $bundle->baseUrl . '/passport-scanner.js';
     $scriptPosition = strpos($html, 'src="' . $scriptUrl . '"');
     $initPosition = strpos($html, 'PassportScanner.init(config)');

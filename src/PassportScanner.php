@@ -20,11 +20,12 @@ class PassportScanner extends InputWidget
     public function run()
     {
         $view = $this->getView();
-        PassportScannerAsset::register($view);
+        $asset = PassportScannerAsset::register($view);
 
         $inputId = $this->options['id'];
         $containerId = $this->getId() . '-scanner';
         $config = $this->scannerOptions;
+        $config['assetBaseUrl'] = $asset->baseUrl . '/';
         $config['fields'] = (object) $this->fields;
 
         // DOM references also support custom input IDs that need CSS escaping.

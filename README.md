@@ -24,7 +24,8 @@ application's `composer.json` and `composer.lock`; deployment with
 `composer install` uses the locked version.
 
 The Yii2 widget is optional within the package. A Yii2 application already
-has the framework dependency it needs. The widget is available from v0.6.0.
+has the framework dependency it needs. Use v0.6.1 or later for automatic OCR
+asset URL configuration.
 
 ## Add the scanner to a Yii2 form
 
