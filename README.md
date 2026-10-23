@@ -63,7 +63,7 @@ stable setting does not select untagged commits or development branches.
 
 ### Input class and jQuery (optional)
 
-Starting with v0.5.0, add `js-tjaup-passportscanner-input` to a passport text
+Starting with v0.5.1, add `js-tjaup-passportscanner-input` to a passport text
 input. The browser script creates scanner controls immediately after that
 input, fills its value on a usable MRZ scan, and emits a result event. This
 works with plain HTML and inputs rendered by any server framework. Publish
