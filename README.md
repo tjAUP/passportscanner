@@ -67,13 +67,50 @@ including the local OCR worker, core, and language data. No asset path is
 needed in the view. PHP registers the assets and markup; JavaScript performs
 the scan in the browser and calls `PassportScanner.init(config)`.
 
-To fill more fields, pass CSS selectors for inputs already on the page:
+For a complete form, define the corresponding attributes on your Yii2 model
+and render the inputs with IDs that match the widget's field selectors:
 
 ```php
+<?php
+use TjAup\PassportScanner;
+use yii\helpers\Html;
+use yii\widgets\ActiveForm;
+
+$form = ActiveForm::begin([
+    'options' => ['enctype' => 'multipart/form-data'],
+]);
+
+echo $form->field($model, 'name')->textInput(['id' => 'traveler-name']);
+echo $form->field($model, 'firstName')->textInput(['id' => 'traveler-first-name']);
+echo $form->field($model, 'lastName')->textInput(['id' => 'traveler-last-name']);
+echo $form->field($model, 'title')->dropDownList(
+    ['MR' => 'Mr', 'MS' => 'Ms'],
+    ['prompt' => 'Select title', 'id' => 'traveler-title']
+);
+echo $form->field($model, 'gender')->dropDownList(
+    ['male' => 'Male', 'female' => 'Female'],
+    ['prompt' => 'Select gender', 'id' => 'traveler-gender']
+);
+echo $form->field($model, 'dob')->input('date', ['id' => 'traveler-dob']);
+echo $form->field($model, 'expiry')->input('date', ['id' => 'traveler-expiry']);
+echo $form->field($model, 'nationality')->dropDownList(
+    [
+        'Malaysia' => 'Malaysia',
+        'Singapore' => 'Singapore',
+        'United States' => 'United States',
+    ],
+    ['prompt' => 'Select nationality', 'id' => 'traveler-nationality']
+);
+echo $form->field($model, 'passportImg')->fileInput(['id' => 'traveler-passport-image']);
+
 echo $form->field($model, 'passport')->widget(PassportScanner::class, [
+    'options' => ['id' => 'traveler-passport'],
     'fields' => [
+        'name' => '#traveler-name',
         'firstName' => '#traveler-first-name',
         'lastName' => '#traveler-last-name',
+        'title' => '#traveler-title',
+        'gender' => '#traveler-gender',
         'dob' => '#traveler-dob',
         'expiry' => '#traveler-expiry',
         'nationality' => '#traveler-nationality',
@@ -84,16 +121,20 @@ echo $form->field($model, 'passport')->widget(PassportScanner::class, [
         'countryNames' => [
             'MY' => 'Malaysia',
             'SG' => 'Singapore',
+            'US' => 'United States',
         ],
     ],
 ])->label(false);
+
+echo Html::submitButton('Save');
+ActiveForm::end();
 ```
 
 The widget always maps `passport` to its own text input. The other selectors
 must point to fields in the rendered form. `passportImg` must point to a file
 input if you want the selected or captured image attached to the form.
-`scannerOptions` accepts JSON-serializable options such as `dateFormat` and
-`countryNames`.
+`scannerOptions` supports `dateFormat` and `countryNames`. The widget supplies
+the scanner container, passport input, and OCR asset URL automatically.
 From v0.7.0, rendering the widget always enables its scanner controls;
 the earlier availability check has been removed.
 
