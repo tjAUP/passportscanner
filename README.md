@@ -1,18 +1,20 @@
 # PassportScanner
 
-Reusable browser-based passport MRZ scanner. The scanner runs in the browser,
-fills caller-provided form fields, and can attach the selected image to a file
-input. A Yii2 asset bundle is included, but the JavaScript can be used without
-Yii.
+Framework-independent browser passport MRZ scanner. It reads a selected image
+or camera frame in the browser, fills caller-provided form fields, and can
+attach the image to a file input. The scanner does not save or upload data.
 
-## Install from GitHub
+Source: [vick4920/passportscanner](https://github.com/vick4920/passportscanner)
 
-The source repository is
-[vick4920/passportscanner](https://github.com/vick4920/passportscanner).
-Push the local `main` branch and `v0.1.0` tag before installing it from
-GitHub. The Composer package name is `tbroker/passportscanner`.
+## Install
 
-Add the repository to the consuming project's `composer.json`:
+The browser script is `dist/passport-scanner.js`. Include it with a script tag,
+copy it into your application's public assets, or load it through a bundler.
+No PHP framework, jQuery, Bootstrap, or icon library is required.
+
+### Composer
+
+Add this VCS repository to the consuming project's `composer.json`:
 
 ```json
 "repositories": [
@@ -23,80 +25,74 @@ Add the repository to the consuming project's `composer.json`:
 ]
 ```
 
-Then run `composer require tbroker/passportscanner:^0.1`. Commit the
-consumer's `composer.json` and `composer.lock`; deployments can then run
-`composer install` to fetch the locked package version. Before a release
-tag is pushed, use `composer require tbroker/passportscanner:dev-main` for a
-temporary test instead. A private repository needs GitHub credentials
-configured for Composer on each machine that installs it.
+Run `composer require vick4920/passportscanner:^0.2` after the `v0.2.0` tag
+has been pushed. Serve the installed file from
+`vendor/vick4920/passportscanner/dist/passport-scanner.js` through your
+framework's asset pipeline or copy it to a public directory. Do not expose
+the whole `vendor` directory. Commit `composer.json` and `composer.lock`;
+deployments then use `composer install`.
 
-## Development install
+### JavaScript
 
-Place this directory beside the consuming project. Add a Composer path
-repository to that project's `composer.json`:
+Install directly from GitHub with
+`npm install github:vick4920/passportscanner`. In a browser-targeted bundle:
 
-```json
-"repositories": [
-    {
-        "type": "path",
-        "url": "../passportscanner",
-        "options": {"symlink": true}
-    }
-]
+```js
+import PassportScanner from '@vick4920/passportscanner';
 ```
 
-Then run `composer require tbroker/passportscanner:@dev`. Do not change the
-consuming project until ready to switch from its existing scanner.
+The script also exposes `window.PassportScanner` when loaded with a regular
+`<script>` tag.
 
-## Yii2
+## Use
 
-Register the asset in a Yii2 view and initialize it after rendering a
-container and the target form fields:
+Render a container and the form fields you want to fill. Pass CSS selectors
+or DOM elements for the container and fields:
 
-```php
-<?php
-use TBroker\PassportScanner\Yii2\PassportScannerAsset;
-use yii\web\View;
-
-PassportScannerAsset::register($this);
-echo '<div id="passport-scanner"></div>';
-$this->registerJs(<<<'JS'
-window.PassportScanner.init({
+```html
+<input id="traveler-name" name="name">
+<input id="traveler-passport" name="passport">
+<input id="traveler-dob" name="dob" type="date">
+<input id="traveler-expiry" name="expiry" type="date">
+<select id="traveler-nationality" name="nationality"></select>
+<input id="traveler-passport-image" name="passportImg" type="file">
+<div id="passport-scanner"></div>
+<script src="/assets/passport-scanner.js"></script>
+<script>
+PassportScanner.init({
     container: '#passport-scanner',
     fields: {
         name: '#traveler-name',
         passport: '#traveler-passport',
         dob: '#traveler-dob',
-        expiry: '#traveler-passport-expiry',
+        expiry: '#traveler-expiry',
         nationality: '#traveler-nationality',
         passportImg: '#traveler-passport-image'
     },
+    countryNames: { MY: 'Malaysia', SG: 'Singapore', US: 'United States' },
     dateFormat: 'ymd'
 });
-JS, View::POS_READY);
+</script>
 ```
 
-Initialize each time a dynamically loaded form is shown. Call
-`window.PassportScanner.stop()` when closing a camera-based form. Additional
-field keys are `title`, `firstName`, `lastName`, and `gender`. Selectors
-must match the consuming form; the package does not create or save those
-fields.
+For a bundler, call `PassportScanner.init(config)` on the imported object
+instead of loading the script tag. Initialize each time a dynamically loaded
+form is shown and call `PassportScanner.stop()` when closing it. Supported
+field keys are `name`, `firstName`, `lastName`, `title`, `gender`, `passport`,
+`dob`, `expiry`, `nationality`, and `passportImg`. Map `countryNames` to the
+values expected by your nationality select. The scanner does not create or
+save the target fields.
 
-The package does not query the marketplace plug-in table. Pass
-`availabilityUrl` to a same-origin JSON endpoint returning
-`{"available":true}`, or pass `available` as a boolean/function. With
-neither option, the scanner is available by default.
+By default the controls are shown. Use `available: false`, an async
+`available()` function, or `availabilityUrl` for a same-origin JSON endpoint
+returning `{"available":true}` to control availability.
 
-The current OCR loader uses Tesseract.js 5 from jsDelivr. It is loaded on
-first scan, not by Composer. Pass `tesseractUrl` to load a self-hosted
-script instead. Tesseract worker, language, and WASM assets also need local
-hosting for fully offline use. Passport images are processed in the
-browser; this package does not upload them to an OCR server. The UI expects
-jQuery and uses Bootstrap/Font Awesome classes. Camera access requires
-HTTPS or localhost and browser permission. OCR results must be reviewed
-before saving.
-
-This package is not yet installed by the existing T-Broker project.
+Tesseract.js 5 is loaded from jsDelivr on the first scan. Pass
+`tesseractUrl` to use a self-hosted script; its worker, language, and WASM
+assets must also be hosted locally for fully offline use. Passport images
+are processed in the browser, but the OCR runtime requires an internet
+connection with the default settings. Camera use requires HTTPS or
+localhost and browser permission. Always review OCR results before saving.
 
 ## Acknowledgment
 

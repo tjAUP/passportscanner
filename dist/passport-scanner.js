@@ -1,4 +1,4 @@
-(function(window, $) {
+(function(window) {
     'use strict';
 
     var nationalityToCountry = {
@@ -21,7 +21,25 @@
     var cameraSequence = 0;
     var scannerInstance = 0;
     var initSequence = 0;
+    var activeUploadInput = null;
+    var activeUploadListener = null;
     var ocrScriptUrl = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+
+    function findElement(target) {
+        return typeof target === 'string' ? document.querySelector(target) : target || null;
+    }
+
+    function emitChange(element, type) {
+        element.dispatchEvent(new Event(type, { bubbles: true }));
+    }
+
+    function clearUploadListener() {
+        if (activeUploadInput && activeUploadListener) {
+            activeUploadInput.removeEventListener('change', activeUploadListener);
+        }
+        activeUploadInput = null;
+        activeUploadListener = null;
+    }
 
     async function scannerAvailable(config) {
         if (typeof config.available === 'function') {
@@ -49,11 +67,14 @@
         var style = document.createElement('style');
         style.id = 'passport-scanner-styles';
         style.textContent = [
-            '.passport-scanner-field{margin:12px 0 16px}',
+            '.passport-scanner-field{margin:12px 0 16px;font:inherit;color:inherit}',
             '.passport-scanner-field>label{display:block;margin-bottom:6px}',
             '.passport-scanner-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
-            '.passport-scanner-tools>label{display:inline-flex;align-items:center}',
-            '.passport-scanner-tools .btn{margin:0;text-transform:none;font-size:13px}',
+            '.passport-scanner-button{appearance:none;border:1px solid #afb9c8;border-radius:4px;background:#fff;color:#17233a;padding:7px 11px;font:inherit;font-size:13px;line-height:1.3;cursor:pointer}',
+            '.passport-scanner-button:hover{background:#f2f5f8}',
+            '.passport-scanner-button:focus-visible{outline:2px solid #2478c7;outline-offset:2px}',
+            '.passport-scanner-button-primary{border-color:#246ca8;background:#246ca8;color:#fff}',
+            '.passport-scanner-button-primary:hover{background:#19598e}',
             '.passport-scanner-file{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}',
             '.passport-scanner-status{flex:1 1 240px;color:#7a728c;font-size:13px;line-height:1.4}',
             '.passport-scanner-camera-view{position:relative;width:100%;aspect-ratio:4/3;max-height:min(60vh,560px);margin:10px 0;overflow:hidden;background:#171520}',
@@ -68,17 +89,16 @@
     }
 
     function buildScannerUi(config, element) {
-        var container = $(element);
-        if (!container.length) return null;
+        if (!element) return null;
         ensureScannerStyles();
 
         var id = 'passport-scanner-' + (++scannerInstance);
-        container.html(
+        element.innerHTML =
             '<div class="passport-scanner-field">' +
                 '<label>Scan passport to fill details</label>' +
                 '<div class="passport-scanner-tools">' +
-                    '<button type="button" id="' + id + '-camera-open" class="btn btn-primary passport-scanner-camera-open" hidden><i class="fa fa-camera"></i> Use camera</button>' +
-                    '<button type="button" id="' + id + '-choose" class="btn btn-default"><i class="fa fa-image"></i> Choose image</button>' +
+                    '<button type="button" id="' + id + '-camera-open" class="passport-scanner-button passport-scanner-button-primary passport-scanner-camera-open" hidden>Use camera</button>' +
+                    '<button type="button" id="' + id + '-choose" class="passport-scanner-button">Choose image</button>' +
                     '<input type="file" id="' + id + '-file" class="passport-scanner-file" accept=".jpg,.jpeg,.png,.webp">' +
                     '<span id="' + id + '-status" class="passport-scanner-status" role="status" aria-live="polite">Image is processed in this browser. Check the filled details before saving.</span>' +
                 '</div>' +
@@ -88,15 +108,16 @@
                         '<div id="' + id + '-guide" class="passport-scanner-guide" aria-hidden="true"><span class="passport-scanner-guide-mrz"></span></div>' +
                     '</div>' +
                     '<div class="passport-scanner-tools">' +
-                        '<button type="button" id="' + id + '-capture" class="btn btn-primary">Capture &amp; scan</button>' +
-                        '<button type="button" id="' + id + '-camera-close" class="btn btn-default">Close camera</button>' +
+                        '<button type="button" id="' + id + '-capture" class="passport-scanner-button passport-scanner-button-primary">Capture &amp; scan</button>' +
+                        '<button type="button" id="' + id + '-camera-close" class="passport-scanner-button">Close camera</button>' +
                     '</div>' +
                 '</div>' +
-            '</div>'
-        );
+            '</div>';
 
         config.dateFormat = config.dateFormat || 'ymd';
         config.countryNames = config.countryNames || {};
+        config.fields = config.fields || {};
+        config.element = element;
         config.cameraOpen = '#' + id + '-camera-open';
         config.chooseButton = '#' + id + '-choose';
         config.scanInput = '#' + id + '-file';
@@ -112,12 +133,16 @@
 
     function setStatus(message, ui) {
         ui = ui || activeUi;
-        if (ui) $(ui.status).text(message);
+        var status = ui && findElement(ui.status);
+        if (status) status.textContent = message;
     }
 
     function setCameraGuideState(ui, state) {
-        $(ui.guide).removeClass('is-invalid is-steady')
-            .addClass(state === 'invalid' ? 'is-invalid' : state === 'steady' ? 'is-steady' : '');
+        var guide = findElement(ui.guide);
+        if (!guide) return;
+        guide.classList.remove('is-invalid', 'is-steady');
+        if (state === 'invalid') guide.classList.add('is-invalid');
+        if (state === 'steady') guide.classList.add('is-steady');
     }
 
     function stopCamera() {
@@ -137,12 +162,15 @@
             activeVideo.srcObject = null;
             activeVideo = null;
         }
-        if (activeUi) $(activeUi.cameraPanel).prop('hidden', true).show();
+        var cameraPanel = activeUi && findElement(activeUi.cameraPanel);
+        if (cameraPanel) cameraPanel.hidden = true;
     }
 
     function stop() {
         ++initSequence;
         stopCamera();
+        clearUploadListener();
+        activeUi = null;
     }
 
     function ensureOcrLibrary() {
@@ -494,7 +522,11 @@
     }
 
     function fillField(selector, value) {
-        if (selector && value) $(selector).val(value).trigger('input').trigger('change');
+        var field = selector && findElement(selector);
+        if (!field || !value) return;
+        field.value = value;
+        emitChange(field, 'input');
+        emitChange(field, 'change');
     }
 
     function applyPassportDetails(details, ui) {
@@ -521,7 +553,7 @@
     }
 
     function attachPassportImage(file, ui) {
-        var input = ui.fields.passportImg && $(ui.fields.passportImg).first()[0];
+        var input = ui.fields.passportImg && findElement(ui.fields.passportImg);
         if (!input || !file || !window.DataTransfer) return false;
         try {
             var transfer = new DataTransfer();
@@ -529,7 +561,7 @@
             input.files = transfer.files;
             ui.attachingPassportImage = true;
             try {
-                $(input).trigger('change');
+                emitChange(input, 'change');
             } finally {
                 ui.attachingPassportImage = false;
             }
@@ -590,8 +622,8 @@
     }
 
     function getCameraMrzRegion(ui) {
-        var video = $(ui.video)[0];
-        var mrz = $(ui.mrzGuide)[0];
+        var video = findElement(ui.video);
+        var mrz = findElement(ui.mrzGuide);
         if (!video || !mrz) return null;
         var videoRect = video.getBoundingClientRect();
         var mrzRect = mrz.getBoundingClientRect();
@@ -835,7 +867,7 @@
         if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices || !navigator.mediaDevices.getUserMedia) return;
         navigator.mediaDevices.enumerateDevices().then(function(devices) {
             if (devices.some(function(device) { return device.kind === 'videoinput'; })) {
-                if (activeUi === ui) $(ui.cameraOpen).prop('hidden', false).show();
+                if (activeUi === ui) findElement(ui.cameraOpen).hidden = false;
             }
         }).catch(function() {});
     }
@@ -845,26 +877,20 @@
         if (config.tesseractUrl && !ocrLoader) ocrScriptUrl = config.tesseractUrl;
         var sequence = ++initSequence;
         stopCamera();
+        clearUploadListener();
         activeUi = null;
-        var container = $(config.container).first()[0];
+        var container = findElement(config.container);
         if (!container) return;
-        var slot = container.parentElement && container.parentElement.classList.contains('form-group')
-            && container.parentElement.children.length === 1 ? container.parentElement : container;
-        slot.hidden = true;
-        $(container).empty();
+        container.hidden = true;
+        container.replaceChildren();
         if (!await scannerAvailable(config)) return;
         if (sequence !== initSequence || !document.documentElement.contains(container)) return;
         var ui = buildScannerUi(config, container);
         if (!ui) return;
-        slot.hidden = false;
+        container.hidden = false;
         activeUi = ui;
 
-        $(ui.cameraOpen).hide().off('.passportScanner');
-        $(ui.chooseButton).off('.passportScanner');
-        $(ui.scanInput).off('.passportScanner');
-        $(ui.captureButton).off('.passportScanner');
-        $(ui.cameraClose).off('.passportScanner');
-        $(ui.cameraOpen).on('click.passportScanner', async function() {
+        findElement(ui.cameraOpen).addEventListener('click', async function() {
             try {
                 stopCamera();
                 var stream = await navigator.mediaDevices.getUserMedia({
@@ -884,7 +910,7 @@
                 activeVideo = video;
                 activeVideo.srcObject = activeStream;
                 setCameraGuideState(ui, 'neutral');
-                $(ui.cameraPanel).prop('hidden', false);
+                findElement(ui.cameraPanel).hidden = false;
                 await activeVideo.play();
                 if (activeUi === ui) {
                     setStatus('Looking for passport details. Keep the passport steady with the MRZ lines visible.', ui);
@@ -897,13 +923,13 @@
                 }
             }
         });
-        $(ui.cameraClose).on('click.passportScanner', stopCamera);
-        $(ui.chooseButton).on('click.passportScanner', function() {
-            var uploadInput = ui.fields.passportImg && $(ui.fields.passportImg).first()[0];
-            (uploadInput || $(ui.scanInput)[0]).click();
+        findElement(ui.cameraClose).addEventListener('click', stopCamera);
+        findElement(ui.chooseButton).addEventListener('click', function() {
+            findElement(ui.scanInput).click();
         });
         if (ui.fields.passportImg) {
-            $(ui.fields.passportImg).off('change.passportScanner').on('change.passportScanner', function() {
+            activeUploadInput = findElement(ui.fields.passportImg);
+            activeUploadListener = function() {
                 var file = this.files && this.files[0];
                 if (!file || activeUi !== ui || ui.attachingPassportImage) return;
                 if (file.type === 'application/pdf') {
@@ -911,9 +937,10 @@
                     return;
                 }
                 scanImage(file, ui);
-            });
+            };
+            if (activeUploadInput) activeUploadInput.addEventListener('change', activeUploadListener);
         }
-        $(ui.captureButton).on('click.passportScanner', function() {
+        findElement(ui.captureButton).addEventListener('click', function() {
             if (autoScanTimer) {
                 clearTimeout(autoScanTimer);
                 autoScanTimer = null;
@@ -940,7 +967,7 @@
                 else setStatus('Could not capture the image. Please try again or choose an image.', ui);
             }, 'image/jpeg', 0.92);
         });
-        $(ui.scanInput).on('change.passportScanner', async function() {
+        findElement(ui.scanInput).addEventListener('change', async function() {
             var file = this.files && this.files[0];
             this.value = '';
             if (!file) return;
@@ -958,14 +985,15 @@
         });
 
         detectCamera(ui);
-        $(document).off('hidden.bs.modal.passportScanner').on('hidden.bs.modal.passportScanner', stop);
         if (!removalObserver && document.body && window.MutationObserver) {
             removalObserver = new MutationObserver(function() {
-                if (activeVideo && !document.documentElement.contains(activeVideo)) stopCamera();
+                if (activeUi && !document.documentElement.contains(activeUi.element)) stop();
             });
             removalObserver.observe(document.body, { childList: true, subtree: true });
         }
     }
 
-    window.PassportScanner = { init: init, stop: stop };
-})(window, window.jQuery);
+    var api = { init: init, stop: stop };
+    window.PassportScanner = api;
+    if (typeof module === 'object' && module.exports) module.exports = api;
+})(window);
