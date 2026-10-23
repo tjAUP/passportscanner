@@ -66,6 +66,55 @@ requirement to `*` once. Commit `composer.json` and `composer.lock`; deployments
 use `composer install` to reproduce the selected version. Composer's default
 stable setting does not select untagged commits or development branches.
 
+### Input class and jQuery (optional)
+
+Starting with v0.5.0, add `js-tjaup-passportscanner-input` to a passport text
+input. The browser script creates scanner controls immediately after that
+input, fills its value on a usable MRZ scan, and emits a result event. This
+works with plain HTML and inputs rendered by any server framework. Publish
+the complete `dist/` directory as described above.
+
+```html
+<input name="passport" class="js-tjaup-passportscanner-input">
+<script src="/assets/passportscanner/passport-scanner.js" defer></script>
+```
+
+For a Yii2 form, the same browser hook works on its text input:
+
+```php
+echo $form->field($model, 'passport')
+    ->textInput(['class' => 'form-control js-tjaup-passportscanner-input'])
+    ->label(false);
+```
+
+The script initializes the first matching input on page load. When a scan
+passes enough MRZ checks, it dispatches a bubbling native
+`passportscanner:result` event on that input. A jQuery listener can read it:
+
+```js
+$(document).on('passportscanner:result', '.js-tjaup-passportscanner-input', function (event) {
+    const detail = event.originalEvent.detail;
+    console.log(detail.fields.passport, detail.fields.firstName);
+    // Show the values for review before your application saves the form.
+});
+```
+
+`detail.fields` contains the values accepted from the MRZ;
+`detail.verifiedCount` is the number of valid passport/date checks (2 or 3),
+and `detail.complete` is true when all three checks and the name pass. The
+event does not contain the passport image. jQuery is only used to listen for
+the event; the scanner has no jQuery dependency. The passport input itself is
+mapped automatically. To fill other inputs, add selector attributes to the
+passport input, such as `data-field-first-name="#first-name"` or
+`data-field-passport-img="#passport-image"`. The other supported attributes
+follow the [field keys](#field-keys), using kebab case for camel case names.
+Optional settings are `data-date-format`, `data-availability-url`,
+`data-asset-base-url`, and `data-country-names` (a JSON object). For an input
+added after page load, call `PassportScanner.initFromElement(input)`; call
+`PassportScanner.stop()` when removing its form. The scanner manages one active
+interface at a time. Adding the class does not publish the browser assets;
+the application must serve the entire `dist/` directory.
+
 ### Yii2 asset bundle (optional)
 
 This bundle is included starting with v0.4.0. Publish the new tag before

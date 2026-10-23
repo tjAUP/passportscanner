@@ -556,26 +556,37 @@
     }
 
     function applyPassportDetails(details, ui) {
+        var values = {};
         if (details.nameLooksReadable) {
-            fillField(ui.fields.name, details.fullName);
-            fillField(ui.fields.firstName, details.givenNames);
-            fillField(ui.fields.lastName, details.surname);
+            values.name = details.fullName;
+            values.firstName = details.givenNames;
+            values.lastName = details.surname;
         }
-        if (details.passportValid) fillField(ui.fields.passport, details.passportNumber);
-        fillField(ui.fields.dob, details.dateOfBirth);
-        fillField(ui.fields.expiry, details.passportExpiry);
+        if (details.passportValid) values.passport = details.passportNumber;
+        if (details.dateOfBirth) values.dob = details.dateOfBirth;
+        if (details.passportExpiry) values.expiry = details.passportExpiry;
         if (details.sex) {
-            fillField(ui.fields.gender, details.sex === 'M' ? 'male' : 'female');
-            fillField(ui.fields.title, details.sex === 'M' ? 'MR' : 'MS');
+            values.gender = details.sex === 'M' ? 'male' : 'female';
+            values.title = details.sex === 'M' ? 'MR' : 'MS';
         }
 
         var countryCode = nationalityToCountry[details.nationality];
         var countryName = countryCode && ui.countryNames[countryCode];
-        if (countryName) fillField(ui.fields.nationality, countryName);
+        if (countryName) values.nationality = countryName;
+
+        Object.keys(values).forEach(function(key) { fillField(ui.fields[key], values[key]); });
 
         setStatus(hasCompletePassportDetails(details)
             ? 'Passport details filled. Please verify each field before saving.'
             : 'Verified passport details filled. Check the image and enter any missing or incorrect details before saving.', ui);
+        (ui.resultTarget || ui.element).dispatchEvent(new CustomEvent('passportscanner:result', {
+            bubbles: true,
+            detail: {
+                fields: values,
+                verifiedCount: details.verifiedCount,
+                complete: hasCompletePassportDetails(details)
+            }
+        }));
     }
 
     function attachPassportImage(file, ui) {
@@ -764,6 +775,7 @@
                 throw new Error('Could not verify enough passport details. No fields were changed. Try a closer image or enter the details manually.');
             }
             if (options.previewOnly) return details;
+            if (activeUi !== ui) return false;
             applyPassportDetails(details, ui);
             return true;
         } catch (error) {
@@ -1020,7 +1032,60 @@
         }
     }
 
-    var api = { init: init, stop: stop };
+    function initFromElement(element) {
+        element = findElement(element);
+        if (!element) return;
+        var isInput = element.tagName === 'INPUT';
+        var names = {
+            name: 'name',
+            firstName: 'first-name',
+            lastName: 'last-name',
+            title: 'title',
+            gender: 'gender',
+            passport: 'passport',
+            dob: 'dob',
+            expiry: 'expiry',
+            nationality: 'nationality',
+            passportImg: 'passport-img'
+        };
+        var fields = {};
+        Object.keys(names).forEach(function(key) {
+            var selector = element.getAttribute('data-field-' + names[key]);
+            if (selector) fields[key] = selector;
+        });
+        var container = element;
+        if (isInput) {
+            fields.passport = element;
+            container = element._passportScannerContainer;
+            if (!container || !document.documentElement.contains(container)) {
+                container = document.createElement('div');
+                element.insertAdjacentElement('afterend', container);
+                element._passportScannerContainer = container;
+            }
+        }
+        var config = { container: container, fields: fields, resultTarget: isInput ? element : null };
+        var dateFormat = element.getAttribute('data-date-format');
+        var availabilityUrl = element.getAttribute('data-availability-url');
+        var assetBaseUrl = element.getAttribute('data-asset-base-url');
+        var countryNames = element.getAttribute('data-country-names');
+        if (dateFormat) config.dateFormat = dateFormat;
+        if (availabilityUrl) config.availabilityUrl = availabilityUrl;
+        if (assetBaseUrl) config.assetBaseUrl = assetBaseUrl;
+        if (countryNames) {
+            try { config.countryNames = JSON.parse(countryNames); }
+            catch (error) { config.countryNames = {}; }
+        }
+        return init(config);
+    }
+
+    function autoInit() {
+        var element = document.querySelector('input.js-tjaup-passportscanner-input');
+        if (element) initFromElement(element);
+    }
+
+    var api = { init: init, initFromElement: initFromElement, stop: stop };
     window.PassportScanner = api;
     if (typeof module === 'object' && module.exports) module.exports = api;
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', autoInit);
+    else autoInit();
 })(window);
