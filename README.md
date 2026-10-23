@@ -97,3 +97,7 @@ HTTPS or localhost and browser permission. OCR results must be reviewed
 before saving.
 
 This package is not yet installed by the existing T-Broker project.
+
+## Acknowledgment
+
+This project was developed with assistance from OpenAI Codex.
