@@ -9,9 +9,10 @@ Source: [tjAUP/passportscanner](https://github.com/tjAUP/passportscanner)
 ## Installation
 
 PassportScanner runs in the browser. No PHP framework, jQuery, Bootstrap, or
-icon library is required. Choose a package manager below, then publish the
-**entire** `dist/` directory to a URL on your application's own origin. The
-JavaScript file and all of `dist/ocr/` must stay together.
+icon library is required. Choose a package manager below. Plain browser
+integrations publish the **entire** `dist/` directory to a URL on the
+application's own origin; the optional Yii2 asset bundle does this for Yii2
+views. The JavaScript file and all of `dist/ocr/` must stay together.
 
 ### Option 1: Composer
 
@@ -42,10 +43,14 @@ JavaScript file and all of `dist/ocr/` must stay together.
    }
    ```
 
-2. Copy the **contents** of `vendor/tjaup/passportscanner/dist/` into a public
-   directory such as `public/assets/passportscanner/`. Your asset pipeline can
-   perform this copy during deployment. Do not expose the whole `vendor/`
-   directory.
+   Yii2 applications can continue with the [asset bundle example](#yii2-asset-bundle-optional).
+   Other applications follow steps 2 and 3 to publish and load the browser
+   files themselves.
+
+2. For a plain browser integration, copy the **contents** of
+   `vendor/tjaup/passportscanner/dist/` into a public directory such as
+   `public/assets/passportscanner/`. Your asset pipeline can perform this copy
+   during deployment. Do not expose the whole `vendor/` directory.
 
 3. Include the published script on your page:
 
@@ -60,6 +65,45 @@ deploying. If your application currently requires `^0.3.1`, change that
 requirement to `*` once. Commit `composer.json` and `composer.lock`; deployments
 use `composer install` to reproduce the selected version. Composer's default
 stable setting does not select untagged commits or development branches.
+
+### Yii2 asset bundle (optional)
+
+This bundle is included starting with v0.4.0. Publish the new tag before
+installing it through Composer's default stable setting. In a Yii2 view,
+register the asset bundle and initialize the browser scanner:
+
+```php
+<?php
+use TjAup\PassportScanner\Yii2\PassportScannerAsset;
+use yii\web\View;
+
+PassportScannerAsset::register($this);
+$scannerJs = <<<'JS'
+PassportScanner.init({
+    container: '#passport-scanner',
+    fields: {
+        passport: '#traveler-passport',
+        passportImg: '#traveler-passport-image'
+    }
+});
+JS;
+$this->registerJs($scannerJs, View::POS_END);
+?>
+
+<input id="traveler-passport" name="passport">
+<input id="traveler-passport-image" name="passportImg" type="file">
+<div id="passport-scanner"></div>
+```
+
+`PassportScannerAsset::register($this)` publishes the complete `dist/`
+directory, including `dist/ocr/`, to Yii2's web asset directory and loads
+`passport-scanner.js`. Its URL is detected by the browser script, so no
+`assetBaseUrl` is needed in this example. PHP only registers the assets;
+JavaScript still calls `PassportScanner.init(config)` for each form. When a
+dynamically shown form closes, call `PassportScanner.stop()` from that form's
+JavaScript close handler. The Yii2 class is optional and only needs Yii2 in
+applications that use it; non-Yii consumers can continue using the browser
+script directly.
 
 ### Option 2: JavaScript package
 

@@ -2,5 +2,13 @@
     "name": "tjaup/passportscanner",
     "description": "Browser-based passport MRZ scanner",
     "type": "library",
-    "license": "proprietary"
+    "license": "proprietary",
+    "suggest": {
+        "yiisoft/yii2": "Required only for the optional Yii2 asset bundle"
+    },
+    "autoload": {
+        "psr-4": {
+            "TjAup\\PassportScanner\\Yii2\\": "src/Yii2/"
+        }
+    }
 }
