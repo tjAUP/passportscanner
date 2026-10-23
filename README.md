@@ -15,9 +15,18 @@ JavaScript file and all of `dist/ocr/` must stay together.
 
 ### Option 1: Composer
 
-1. In your application's `composer.json`, add the GitHub VCS repository and
-   package requirement. Merge these entries with any repositories or
-   requirements you already have:
+1. From your application's directory, register this GitHub repository, then
+   require the package:
+
+   ```sh
+   composer config repositories.passportscanner vcs https://github.com/tjAUP/passportscanner
+   composer require "tjaup/passportscanner:*"
+   ```
+
+   The first command is required because the package is installed from this
+   GitHub repository. These commands add the following entries to your
+   application's `composer.json`; you can also add them manually alongside
+   its existing entries:
 
    ```json
    {
@@ -33,18 +42,12 @@ JavaScript file and all of `dist/ocr/` must stay together.
    }
    ```
 
-2. From the application directory, run:
-
-   ```sh
-   composer update tjaup/passportscanner
-   ```
-
-3. Copy the **contents** of `vendor/tjaup/passportscanner/dist/` into a public
+2. Copy the **contents** of `vendor/tjaup/passportscanner/dist/` into a public
    directory such as `public/assets/passportscanner/`. Your asset pipeline can
    perform this copy during deployment. Do not expose the whole `vendor/`
    directory.
 
-4. Include the published script on your page:
+3. Include the published script on your page:
 
    ```html
    <script src="/assets/passportscanner/passport-scanner.js"></script>
