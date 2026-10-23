@@ -4,7 +4,7 @@ Framework-independent browser passport MRZ scanner. It reads a selected image
 or camera frame in the browser, fills caller-provided form fields, and can
 attach the image to a file input. The scanner does not save or upload data.
 
-Source: [vick4920/passportscanner](https://github.com/vick4920/passportscanner)
+Source: [tjAUP/passportscanner](https://github.com/tjAUP/passportscanner)
 
 ## Install
 
@@ -21,7 +21,7 @@ Add this VCS repository to the consuming project's `composer.json`:
 "repositories": [
     {
         "type": "vcs",
-        "url": "https://github.com/vick4920/passportscanner"
+        "url": "https://github.com/tjAUP/passportscanner"
     }
 ]
 ```
@@ -35,7 +35,7 @@ deployments then use `composer install`.
 ### JavaScript
 
 Install directly from GitHub with
-`npm install github:vick4920/passportscanner`. In a browser-targeted bundle:
+`npm install github:tjAUP/passportscanner`. In a browser-targeted bundle:
 
 ```js
 import PassportScanner from '@vick4920/passportscanner';
