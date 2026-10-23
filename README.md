@@ -6,43 +6,105 @@ attach the image to a file input. The scanner does not save or upload data.
 
 Source: [tjAUP/passportscanner](https://github.com/tjAUP/passportscanner)
 
-## Install
+## Installation
 
-The browser script is `dist/passport-scanner.js`. Publish the entire `dist/`
-directory, including `dist/ocr/`, to your application's public assets.
-Include the script with a script tag or load it through a bundler.
-No PHP framework, jQuery, Bootstrap, or icon library is required.
+PassportScanner runs in the browser. No PHP framework, jQuery, Bootstrap, or
+icon library is required. Choose a package manager below, then publish the
+**entire** `dist/` directory to a URL on your application's own origin. The
+JavaScript file and all of `dist/ocr/` must stay together.
 
-### Composer
+### Option 1: Composer
 
-Add this VCS repository to the consuming project's `composer.json`:
+1. In your application's `composer.json`, add the GitHub VCS repository and
+   package requirement. Merge these entries with any repositories or
+   requirements you already have:
 
-```json
-"repositories": [
-    {
-        "type": "vcs",
-        "url": "https://github.com/tjAUP/passportscanner"
-    }
-]
+   ```json
+   {
+       "repositories": [
+           {
+               "type": "vcs",
+               "url": "https://github.com/tjAUP/passportscanner"
+           }
+       ],
+       "require": {
+           "tjaup/passportscanner": "*"
+       }
+   }
+   ```
+
+2. From the application directory, run:
+
+   ```sh
+   composer update tjaup/passportscanner
+   ```
+
+3. Copy the **contents** of `vendor/tjaup/passportscanner/dist/` into a public
+   directory such as `public/assets/passportscanner/`. Your asset pipeline can
+   perform this copy during deployment. Do not expose the whole `vendor/`
+   directory.
+
+4. Include the published script on your page:
+
+   ```html
+   <script src="/assets/passportscanner/passport-scanner.js"></script>
+   ```
+
+The `*` requirement allows future `composer update tjaup/passportscanner` runs
+to select the latest stable tagged release without editing the version in
+`composer.json`. It can also admit breaking releases, so review updates before
+deploying. If your application currently requires `^0.3.1`, change that
+requirement to `*` once. Commit `composer.json` and `composer.lock`; deployments
+use `composer install` to reproduce the selected version. Composer's default
+stable setting does not select untagged commits or development branches.
+
+### Option 2: JavaScript package
+
+1. Install the package from GitHub:
+
+   ```sh
+   npm install github:tjAUP/passportscanner
+   ```
+
+2. Copy the **contents** of `node_modules/@tjaup/passportscanner/dist/` into a
+   public directory such as `public/assets/passportscanner/`. Configure your
+   build or deployment to repeat this copy after package updates.
+
+3. Import the scanner in a browser-targeted bundle and give it the URL of that
+   public directory:
+
+   ```js
+   import PassportScanner from '@tjaup/passportscanner';
+
+   PassportScanner.init({
+       container: '#passport-scanner',
+       assetBaseUrl: '/assets/passportscanner/',
+       fields: { passport: '#traveler-passport' }
+   });
+   ```
+
+When using a regular `<script>` tag instead, the scanner is available as
+`window.PassportScanner`, and it detects the asset directory from the script
+URL. The [usage example](#use) shows all supported form fields.
+
+### Check the published files
+
+With the example public path above, confirm these URLs load from your own
+server:
+
+```text
+/assets/passportscanner/passport-scanner.js
+/assets/passportscanner/ocr/tesseract.min.js
+/assets/passportscanner/ocr/worker.min.js
+/assets/passportscanner/ocr/core/
+/assets/passportscanner/ocr/lang/eng.traineddata.gz
 ```
 
-Run `composer require tjaup/passportscanner:^0.3.1` after the `v0.3.1` tag
-has been pushed. Publish the installed `vendor/tjaup/passportscanner/dist/`
-directory through your framework's asset pipeline. Do not expose
-the whole `vendor` directory. Commit `composer.json` and `composer.lock`;
-deployments then use `composer install`.
-
-### JavaScript
-
-Install directly from GitHub with
-`npm install github:tjAUP/passportscanner`. In a browser-targeted bundle:
-
-```js
-import PassportScanner from '@tjaup/passportscanner';
-```
-
-The script also exposes `window.PassportScanner` when loaded with a regular
-`<script>` tag.
+Keep the OCR filenames and directory layout unchanged. Serve
+`eng.traineddata.gz` as binary without an HTTP `Content-Encoding` header. For
+camera scanning, serve your page over HTTPS or localhost and allow camera
+permission. Then use the [example below](#use) to initialize the scanner and
+verify the populated fields before saving.
 
 ## Use
 
