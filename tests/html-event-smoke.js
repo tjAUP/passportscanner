@@ -23,7 +23,8 @@ const element = (attributes = {}) => ({
 });
 
 const passport = element({
-    'data-field-first-name': '#first-name'
+    'data-field-first-name': '#first-name',
+    'data-availability-url': '/old-availability-endpoint'
 });
 passport.tagName = 'INPUT';
 const firstName = element();
@@ -48,6 +49,7 @@ const document = {
 const mrz = 'P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<\n'
     + 'L898902C36UTO7408122F1204159ZE184226B<<<<<10';
 let recognizedText = mrz;
+let availabilityRequests = 0;
 const window = {
     Tesseract: {
         async createWorker() {
@@ -63,7 +65,8 @@ class FakeEvent {
 }
 const context = {
     window, document, navigator: {}, URL, Event: FakeEvent, CustomEvent: FakeEvent,
-    setTimeout, clearTimeout, Promise
+    setTimeout, clearTimeout, Promise,
+    fetch() { availabilityRequests++; throw new Error('Availability requests are obsolete'); }
 };
 vm.runInNewContext(script, context);
 
@@ -75,6 +78,7 @@ vm.runInNewContext(script, context);
     const container = passport.inserted.child;
     assert.equal(passport.inserted.position, 'afterend');
     assert.equal(container.hidden, false);
+    assert.equal(availabilityRequests, 0);
 
     const scanInput = controls['#passport-scanner-1-file'];
     assert.equal(typeof scanInput.listeners.change, 'function');

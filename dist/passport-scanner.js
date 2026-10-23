@@ -20,7 +20,6 @@
     var autoScanWorkerPromise = null;
     var cameraSequence = 0;
     var scannerInstance = 0;
-    var initSequence = 0;
     var activeUploadInput = null;
     var activeUploadListener = null;
     var scriptUrl = document.currentScript && document.currentScript.src;
@@ -55,27 +54,6 @@
         }
         activeUploadInput = null;
         activeUploadListener = null;
-    }
-
-    async function scannerAvailable(config) {
-        if (typeof config.available === 'function') {
-            try {
-                return await config.available() === true;
-            } catch (error) {
-                return false;
-            }
-        }
-        if (typeof config.available === 'boolean') return config.available;
-        if (!config.availabilityUrl) return true;
-        if (!window.fetch) return false;
-        try {
-            var response = await fetch(config.availabilityUrl, { credentials: 'same-origin', cache: 'no-store' });
-            if (!response.ok) return false;
-            var result = await response.json();
-            return result.available === true;
-        } catch (error) {
-            return false;
-        }
     }
 
     function ensureScannerStyles() {
@@ -183,7 +161,6 @@
     }
 
     function stop() {
-        ++initSequence;
         stopCamera();
         clearUploadListener();
         activeUi = null;
@@ -914,7 +891,6 @@
         config = config || {};
         var base = config.assetBaseUrl || detectedAssetBaseUrl;
         assetBaseUrl = base ? new URL(String(base).endsWith('/') ? base : base + '/', document.baseURI).href : null;
-        var sequence = ++initSequence;
         stopCamera();
         clearUploadListener();
         activeUi = null;
@@ -922,8 +898,7 @@
         if (!container) return;
         container.hidden = true;
         container.replaceChildren();
-        if (!await scannerAvailable(config)) return;
-        if (sequence !== initSequence || !document.documentElement.contains(container)) return;
+        if (!document.documentElement.contains(container)) return;
         var ui = buildScannerUi(config, container);
         if (!ui) return;
         container.hidden = false;
@@ -1065,11 +1040,9 @@
         }
         var config = { container: container, fields: fields, resultTarget: isInput ? element : null };
         var dateFormat = element.getAttribute('data-date-format');
-        var availabilityUrl = element.getAttribute('data-availability-url');
         var assetBaseUrl = element.getAttribute('data-asset-base-url');
         var countryNames = element.getAttribute('data-country-names');
         if (dateFormat) config.dateFormat = dateFormat;
-        if (availabilityUrl) config.availabilityUrl = availabilityUrl;
         if (assetBaseUrl) config.assetBaseUrl = assetBaseUrl;
         if (countryNames) {
             try { config.countryNames = JSON.parse(countryNames); }

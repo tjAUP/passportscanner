@@ -92,8 +92,10 @@ echo $form->field($model, 'passport')->widget(PassportScanner::class, [
 The widget always maps `passport` to its own text input. The other selectors
 must point to fields in the rendered form. `passportImg` must point to a file
 input if you want the selected or captured image attached to the form.
-`scannerOptions` accepts JSON-serializable options such as `dateFormat`,
-`countryNames`, and `availabilityUrl`.
+`scannerOptions` accepts JSON-serializable options such as `dateFormat` and
+`countryNames`.
+From v0.7.0, rendering the widget always enables its scanner controls;
+the earlier availability check has been removed.
 
 | Field key | Scanned value |
 | --- | --- |
