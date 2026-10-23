@@ -9,7 +9,28 @@ Source: [tjAUP/passportscanner](https://github.com/tjAUP/passportscanner)
 
 ## Install in a Yii2 application
 
-Register the GitHub repository with Composer, then require the package:
+This GitHub repository is private. Each machine running Composer needs access to
+it. Create a fine-grained GitHub personal access token for
+`tjAUP/passportscanner` with read-only **Contents** permission. Store it in
+Composer's global authentication file, outside your application repository:
+
+```sh
+composer config --global --editor --auth
+```
+
+In the editor, set the GitHub token (preserving any other authentication
+entries), then save the file:
+
+```json
+{
+    "github-oauth": {
+        "github.com": "YOUR_READ_ONLY_TOKEN"
+    }
+}
+```
+
+Keep the token out of `composer.json` and Git history. Register the GitHub
+repository with Composer, then require the package:
 
 ```sh
 composer config repositories.passportscanner vcs https://github.com/tjAUP/passportscanner
