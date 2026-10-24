@@ -24,6 +24,11 @@ const element = (attributes = {}) => ({
 
 const passport = element({
     'data-field-first-name': '#first-name',
+    'data-field-passport-no': '#passport-no',
+    'data-field-document-code': '#document-code',
+    'data-field-issuing-country-code': '#issuing-country-code',
+    'data-field-nationality-code': '#nationality-code',
+    'data-field-optional-data': '#optional-data',
     'data-field-dob': '#dob',
     'data-field-expiry': '#expiry',
     'data-date-format': 'Y/m/d',
@@ -31,6 +36,11 @@ const passport = element({
 });
 passport.tagName = 'INPUT';
 const firstName = element();
+const passportNo = element();
+const documentCode = element();
+const issuingCountryCode = element();
+const nationalityCode = element();
+const optionalData = element();
 const dob = element();
 const expiry = element();
 const controls = {};
@@ -48,6 +58,11 @@ const document = {
         if (selector === 'input.js-tjaup-passportscanner-input') return passport;
         if (selector === '#passport') return passport;
         if (selector === '#first-name') return firstName;
+        if (selector === '#passport-no') return passportNo;
+        if (selector === '#document-code') return documentCode;
+        if (selector === '#issuing-country-code') return issuingCountryCode;
+        if (selector === '#nationality-code') return nationalityCode;
+        if (selector === '#optional-data') return optionalData;
         if (selector === '#dob') return dob;
         if (selector === '#expiry') return expiry;
         return controls[selector] ||= element();
@@ -94,13 +109,46 @@ vm.runInNewContext(script, context);
     await new Promise(resolve => setTimeout(resolve, 0));
 
     assert.equal(passport.value, 'L898902C3');
+    assert.equal(passportNo.value, 'L898902C3');
     assert.equal(firstName.value, 'ANNA MARIA');
+    assert.equal(documentCode.value, 'P');
+    assert.equal(issuingCountryCode.value, 'UTO');
+    assert.equal(nationalityCode.value, 'UTO');
+    assert.equal(optionalData.value, 'ZE184226B');
     assert.equal(dob.value, '1974/08/12');
     assert.equal(expiry.value, '2012/04/15');
     assert.equal(result.fields.passport, 'L898902C3');
+    assert.equal(result.fields.passportNo, 'L898902C3');
+    assert.equal(result.fields.documentCode, 'P');
+    assert.equal(result.fields.issuingCountryCode, 'UTO');
+    assert.equal(result.fields.nationalityCode, 'UTO');
+    assert.equal(result.fields.sex, 'F');
+    assert.equal(result.fields.optionalData, 'ZE184226B');
+    assert.equal(result.checks.passport, true);
+    assert.equal(result.checks.optionalData, true);
+    assert.equal(result.checks.composite, true);
     assert.equal(result.verifiedCount, 3);
     assert.equal(result.complete, true);
     assert.equal('image' in result, false);
+
+    result = undefined;
+    recognizedText = mrz.replace('L898902C36', 'L898902C37');
+    scanInput.files = [{ type: 'image/jpeg', name: 'bad-passport-check.jpg' }];
+    scanInput.listeners.change.call(scanInput);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(result.verifiedCount, 2);
+    assert.equal(result.checks.passport, false);
+    assert.equal('passport' in result.fields, false);
+    assert.equal('passportNo' in result.fields, false);
+    assert.equal(passport.value, 'L898902C3');
+
+    result = undefined;
+    recognizedText = mrz.replace('ZE184226B<<<<<1', 'ZE184226B<<<<<2');
+    scanInput.files = [{ type: 'image/jpeg', name: 'bad-optional-check.jpg' }];
+    scanInput.listeners.change.call(scanInput);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(result.checks.optionalData, false);
+    assert.equal('optionalData' in result.fields, false);
 
     result = undefined;
     recognizedText = 'not a passport';

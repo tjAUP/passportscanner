@@ -88,15 +88,20 @@ values. For example, with jQuery:
 ```js
 $(document).on('passportscanner:result', '.js-tjaup-passportscanner-input', function (event) {
     const result = event.originalEvent.detail;
-    console.log(result.fields.passport, result.fields.firstName);
+    console.log(result.fields.passportNo, result.fields.firstName);
     // Ask the traveler to verify the populated fields before saving.
 });
 ```
 
-The input itself is mapped to `passport`. Map other fields with
+The input itself is mapped to `passport`, the verified passport number. The
+same number is also available as `result.fields.passportNo`; you can use a
+field named `passportNo` for the scanner input. Map other fields with
 `data-field-name`, `data-field-first-name`, `data-field-last-name`,
 `data-field-title`, `data-field-gender`, `data-field-dob`,
-`data-field-expiry`, `data-field-nationality`, and `data-field-passport-img`.
+`data-field-expiry`, `data-field-nationality`, `data-field-passport-no`,
+`data-field-document-code`, `data-field-issuing-country-code`,
+`data-field-nationality-code`, `data-field-sex`, `data-field-optional-data`,
+and `data-field-passport-img`.
 Optional attributes are `data-date-format`, `data-country-names` (JSON), and
 `data-asset-base-url`.
 
@@ -161,14 +166,36 @@ require valid MRZ checks. `passportImg` must be a file input if you want to
 attach the selected or captured image to a form. The scanner never submits
 the form.
 
+`detail.fields` includes every accepted MRZ value, even when no form field is
+mapped to it:
+
+| Field | Value |
+| --- | --- |
+| `name`, `firstName`, `lastName` | Readable MRZ name and parts |
+| `passport`, `passportNo` | Same passport number, only when its check digit passes |
+| `dob`, `expiry` | Dates, only when their check digits and dates are valid |
+| `gender`, `title` | Values derived from an `M` or `F` sex marker |
+| `sex` | Original `M` or `F` MRZ marker |
+| `nationalityCode` | Three-letter MRZ nationality code |
+| `nationality` | Matching value from `countryNames`, when configured |
+| `documentCode` | Passport type code from the first MRZ line |
+| `issuingCountryCode` | Three-letter issuing state or organization code |
+| `optionalData` | Issuer-defined data, only when its check digit passes |
+
+`optionalData` has no universal meaning; an issuing state may use it for a
+personal number. MRZ scanning cannot read details that appear only in the
+passport's visual area or electronic chip.
+
 `dateFormat` accepts PHP date letters such as `Y/m/d`, `y/m/d`, and `d m y`.
 Escape a format letter with `\` to print it literally. The default `Y-m-d`
 fits native HTML `type="date"` inputs. MRZ dates have no time zone; time
 tokens represent midnight UTC. Legacy `ymd` and `dmy` settings remain
 supported.
 
-The result event has `detail.fields`, `detail.verifiedCount` (2 or 3), and
-`detail.complete`. It does not contain the passport image. Verify every
+The result event has `detail.fields`, `detail.checks`,
+`detail.verifiedCount` (2 or 3), and `detail.complete`. `detail.checks`
+contains boolean `passport`, `dob`, `expiry`, `optionalData`, and `composite`
+MRZ check results. It does not contain the passport image. Verify every
 populated value against the passport before saving.
 
 ## Local assets and privacy

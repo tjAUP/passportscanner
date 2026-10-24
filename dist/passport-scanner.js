@@ -541,6 +541,14 @@
         var passportExpiry = expiryValid ? parseMrzDate(expiryField, false, ui.dateFormat) : '';
         var sexMarker = second.charAt(birthStart + 7);
         var sex = sexMarker === 'M' || sexMarker === 'F' ? sexMarker : '';
+        var documentCode = first ? first.slice(0, 2).replace(/<+$/, '') : '';
+        var issuingCountryCode = first && /^[A-Z]{3}$/.test(first.slice(2, 5)) ? first.slice(2, 5) : '';
+        var nationalityCode = /^[A-Z]{3}$/.test(nationality) ? nationality : '';
+        var optionalDataField = second.slice(28, 42);
+        var optionalData = optionalDataField.replace(/<+$/, '');
+        var optionalDataValid = Boolean(optionalData) && checkDigit(optionalDataField, second[42]);
+        var compositeField = second.slice(0, 10) + second.slice(13, 20) + second.slice(21, 43);
+        var compositeValid = checkDigit(compositeField, second[43]);
         var nameLooksReadable = isReadableMrzName(first, fullName);
         passportValid = passportValid && passportNumber.length >= 5;
         var verifiedCount = (passportValid ? 1 : 0) + (dateOfBirth ? 1 : 0) + (passportExpiry ? 1 : 0);
@@ -550,12 +558,23 @@
             fullName: fullName,
             givenNames: parsedName.givenNames,
             surname: parsedName.surname,
+            documentCode: documentCode,
+            issuingCountryCode: issuingCountryCode,
             passportNumber: passportNumber,
             passportValid: passportValid,
             nationality: nationality,
+            nationalityCode: nationalityCode,
             sex: sex,
             dateOfBirth: dateOfBirth,
             passportExpiry: passportExpiry,
+            optionalData: optionalDataValid ? optionalData : '',
+            checks: {
+                passport: passportValid,
+                dob: birthValid && Boolean(dateOfBirth),
+                expiry: expiryValid && Boolean(passportExpiry),
+                optionalData: optionalDataValid,
+                composite: compositeValid
+            },
             nameLooksReadable: nameLooksReadable,
             verifiedCount: verifiedCount,
             score: score
@@ -595,10 +614,18 @@
             values.firstName = details.givenNames;
             values.lastName = details.surname;
         }
-        if (details.passportValid) values.passport = details.passportNumber;
+        if (details.passportValid) {
+            values.passport = details.passportNumber;
+            values.passportNo = details.passportNumber;
+        }
         if (details.dateOfBirth) values.dob = details.dateOfBirth;
         if (details.passportExpiry) values.expiry = details.passportExpiry;
+        if (details.documentCode) values.documentCode = details.documentCode;
+        if (details.issuingCountryCode) values.issuingCountryCode = details.issuingCountryCode;
+        if (details.nationalityCode) values.nationalityCode = details.nationalityCode;
+        if (details.optionalData) values.optionalData = details.optionalData;
         if (details.sex) {
+            values.sex = details.sex;
             values.gender = details.sex === 'M' ? 'male' : 'female';
             values.title = details.sex === 'M' ? 'MR' : 'MS';
         }
@@ -616,6 +643,7 @@
             bubbles: true,
             detail: {
                 fields: values,
+                checks: details.checks,
                 verifiedCount: details.verifiedCount,
                 complete: hasCompletePassportDetails(details)
             }
@@ -1090,9 +1118,15 @@
             title: 'title',
             gender: 'gender',
             passport: 'passport',
+            passportNo: 'passport-no',
             dob: 'dob',
             expiry: 'expiry',
             nationality: 'nationality',
+            documentCode: 'document-code',
+            issuingCountryCode: 'issuing-country-code',
+            nationalityCode: 'nationality-code',
+            sex: 'sex',
+            optionalData: 'optional-data',
             passportImg: 'passport-img'
         };
         var fields = Object.assign({}, config.fields || {});
