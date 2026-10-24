@@ -59,38 +59,102 @@ HTML. jQuery is optional; it can listen for results but the scanner does not
 depend on it.
 
 ```html
-<div class="traveler-row">
-  <input name="travelers[0][firstName]" class="traveler-first-name">
-  <input name="travelers[0][passport]"
-         class="js-tjaup-passportscanner-input"
-         data-field-root=".traveler-row"
-         data-field-first-name=".traveler-first-name">
-</div>
-<div class="traveler-row">
-  <input name="travelers[1][firstName]" class="traveler-first-name">
-  <input name="travelers[1][passport]"
-         class="js-tjaup-passportscanner-input"
-         data-field-root=".traveler-row"
-         data-field-first-name=".traveler-first-name">
-</div>
+<form method="post" enctype="multipart/form-data">
+  <div class="traveler-row">
+    <label>Full name <input name="travelers[0][name]" class="traveler-name"></label>
+    <label>Given names <input name="travelers[0][firstName]" class="traveler-first-name"></label>
+    <label>Surname <input name="travelers[0][lastName]" class="traveler-last-name"></label>
+    <label>Title
+      <select name="travelers[0][title]" class="traveler-title">
+        <option value="">Select</option><option value="MR">Mr</option><option value="MS">Ms</option>
+      </select>
+    </label>
+    <label>Gender
+      <select name="travelers[0][gender]" class="traveler-gender">
+        <option value="">Select</option><option value="male">Male</option><option value="female">Female</option>
+      </select>
+    </label>
+    <label for="traveler-0-passport">Passport number</label>
+    <input id="traveler-0-passport" name="travelers[0][passportNo]"
+             class="js-tjaup-passportscanner-input"
+             data-field-root=".traveler-row"
+             data-field-name=".traveler-name"
+             data-field-first-name=".traveler-first-name"
+             data-field-last-name=".traveler-last-name"
+             data-field-title=".traveler-title"
+             data-field-gender=".traveler-gender"
+             data-field-dob=".traveler-dob"
+             data-field-expiry=".traveler-expiry"
+             data-field-nationality=".traveler-nationality"
+             data-field-nationality-code=".traveler-nationality-code"
+             data-field-document-code=".traveler-document-code"
+             data-field-issuing-country-code=".traveler-issuing-country-code"
+             data-field-sex=".traveler-sex"
+             data-field-optional-data=".traveler-optional-data"
+             data-field-passport-img=".traveler-passport-image"
+             data-date-format="Y-m-d"
+             data-country-names='{"MY":"Malaysia","SG":"Singapore","US":"United States"}'>
+    <label>Date of birth <input type="date" name="travelers[0][dob]" class="traveler-dob"></label>
+    <label>Expiry date <input type="date" name="travelers[0][expiry]" class="traveler-expiry"></label>
+    <label>Nationality
+      <select name="travelers[0][nationality]" class="traveler-nationality">
+        <option value="">Select</option>
+        <option value="Malaysia">Malaysia</option>
+        <option value="Singapore">Singapore</option>
+        <option value="United States">United States</option>
+      </select>
+    </label>
+    <label>Nationality code <input name="travelers[0][nationalityCode]" class="traveler-nationality-code"></label>
+    <label>Document code <input name="travelers[0][documentCode]" class="traveler-document-code"></label>
+    <label>Issuing country code <input name="travelers[0][issuingCountryCode]" class="traveler-issuing-country-code"></label>
+    <label>MRZ sex marker <input name="travelers[0][sex]" class="traveler-sex"></label>
+    <label>Issuer optional data <input name="travelers[0][optionalData]" class="traveler-optional-data"></label>
+    <label>Passport image <input type="file" name="travelers[0][passportImg]" class="traveler-passport-image" accept="image/jpeg,image/png,image/webp"></label>
+    <output class="scan-review" aria-live="polite"></output>
+  </div>
+  <button type="submit">Save after checking the passport</button>
+</form>
 <script src="/assets/passportscanner/passport-scanner.js" defer></script>
+<script>
+document.addEventListener('passportscanner:result', function (event) {
+    const row = event.target.closest('.traveler-row');
+    if (!row) return;
+    const { fields, checks, complete } = event.detail;
+    // All readable MRZ values are in fields; the passport number is fields.passportNo.
+    row.querySelector('.scan-review').textContent =
+        fields.passportNo && checks.passport && complete
+            ? 'Scan complete. Check every field against the passport before saving.'
+            : 'Some details could not be verified. Check and complete the form manually.';
+});
+</script>
 ```
 
-`data-field-root` scopes selectors to the nearest matching ancestor, so each
-scan fills its own row. New inputs added after page load initialize
+The scanner input above is the `passportNo` form field; the scanner fills it
+automatically and returns the same number in both `fields.passport` and
+`fields.passportNo`. The nationality dropdown only accepts the country names
+listed in `data-country-names`. The three-letter `nationalityCode` is returned
+even when a dropdown has no matching country option. The optional data is
+issuer-defined and can be empty.
+Add your application's form action and CSRF protection before saving.
+
+`data-field-root` scopes selectors to the nearest matching ancestor. Repeat
+the `.traveler-row` markup with a new form index for more travelers; each scan
+then fills only its own row. New inputs added after page load initialize
 automatically. Removing a row releases its scanner. If a row is hidden but
 kept in the page, call `PassportScanner.stop(passportInput)` when hiding it and
 `PassportScanner.initFromElement(passportInput)` when showing it again.
 
 After a usable scan, the passport input emits a bubbling
 `passportscanner:result` event. Its `detail.fields` contains the accepted
-values. For example, with jQuery:
+values. The complete example above uses plain JavaScript; jQuery can listen
+instead:
 
 ```js
 $(document).on('passportscanner:result', '.js-tjaup-passportscanner-input', function (event) {
-    const result = event.originalEvent.detail;
-    console.log(result.fields.passportNo, result.fields.firstName);
-    // Ask the traveler to verify the populated fields before saving.
+    const { fields, checks } = event.originalEvent.detail;
+    const passportNo = checks.passport ? fields.passportNo : undefined;
+    const firstName = fields.firstName;
+    // Use these values in your form state after the traveler verifies them.
 });
 ```
 
@@ -117,12 +181,18 @@ scanner container. CSS selectors or DOM elements can be used for fields.
 <input id="last-name" name="lastName">
 <select id="title" name="title"><option value="MR">Mr</option><option value="MS">Ms</option></select>
 <select id="gender" name="gender"><option value="male">Male</option><option value="female">Female</option></select>
-<input id="passport" name="passport">
+<input id="passport" name="passportNo">
 <input id="dob" name="dob" type="date">
 <input id="expiry" name="expiry" type="date">
 <select id="nationality" name="nationality"><option value="Malaysia">Malaysia</option></select>
+<input id="nationality-code" name="nationalityCode">
+<input id="document-code" name="documentCode">
+<input id="issuing-country-code" name="issuingCountryCode">
+<input id="sex" name="sex">
+<input id="optional-data" name="optionalData">
 <input id="passport-image" name="passportImg" type="file">
 <div id="scanner"></div>
+<output id="scan-result" aria-live="polite"></output>
 <script src="/assets/passportscanner/passport-scanner.js"></script>
 <script>
 PassportScanner.init({
@@ -137,14 +207,30 @@ PassportScanner.init({
         dob: '#dob',
         expiry: '#expiry',
         nationality: '#nationality',
+        nationalityCode: '#nationality-code',
+        documentCode: '#document-code',
+        issuingCountryCode: '#issuing-country-code',
+        sex: '#sex',
+        optionalData: '#optional-data',
         passportImg: '#passport-image'
     },
     dateFormat: 'Y-m-d',
     countryNames: { MY: 'Malaysia' },
     assetBaseUrl: '/assets/passportscanner/'
 });
+document.querySelector('#scanner').addEventListener('passportscanner:result', function (event) {
+    const { fields, checks, verifiedCount, complete } = event.detail;
+    document.querySelector('#scan-result').textContent =
+        `Verified ${verifiedCount}/3 checked fields. ` +
+        (checks.passport && fields.passportNo ? 'Passport number read. ' : 'Check the passport number. ') +
+        (complete ? 'Review all values before saving.' : 'Fill missing values manually.');
+});
 </script>
 ```
+
+The `passport` mapping fills the input even when its HTML `name` is
+`passportNo`. To fill a second copy of the number, also map
+`passportNo: '#another-passport-number-input'` in `fields`.
 
 Use `fieldRoot: '.traveler-row'` when multiple instances have repeated field
 selectors. `PassportScanner.stop(container)` stops one scanner;
