@@ -18,15 +18,16 @@ public URL on your application's own origin. Keep `passport-scanner.js` and
 
 ```sh
 composer config repositories.passportscanner vcs https://github.com/tjAUP/passportscanner
-composer require "tjaup/passportscanner:^1.0"
+composer require "tjaup/passportscanner:*"
 ```
 
 Copy `vendor/tjaup/passportscanner/dist/` to a public directory such as
 `public/assets/passportscanner/` during deployment. Then load
-`/assets/passportscanner/passport-scanner.js` in the page. If you intentionally
-want `composer update tjaup/passportscanner` to admit future major releases,
-use a `*` requirement and review those upgrades before deployment. Commit
-your application's `composer.json` and `composer.lock`.
+`/assets/passportscanner/passport-scanner.js` in the page. `*` lets Composer
+select the latest compatible release when you run `composer require` or
+`composer update tjaup/passportscanner`. `composer install` uses the versions
+recorded in `composer.lock`; commit that file for reproducible deployments.
+Review major upgrades before deploying them.
 
 ### npm
 
