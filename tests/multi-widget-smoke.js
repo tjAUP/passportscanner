@@ -171,5 +171,5 @@ async function scan(instanceNumber) {
     window.PassportScanner.stop();
     assert.equal(streams[1].stopped, true);
 
-    console.log('Yii2 and plain HTML scanner instances survived dynamic add, remove, and targeted stop');
+    console.log('Independent scanner instances survived dynamic add, remove, and targeted stop');
 })().catch(error => { console.error(error); process.exitCode = 1; });
