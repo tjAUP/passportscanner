@@ -5,7 +5,6 @@ namespace TjAup;
 use TjAup\PassportScanner\Yii2\PassportScannerAsset;
 use yii\helpers\Html;
 use yii\helpers\Json;
-use yii\web\View;
 use yii\widgets\InputWidget;
 
 /** Optional Yii2 form widget for the framework-independent browser scanner. */
@@ -22,22 +21,13 @@ class PassportScanner extends InputWidget
         $view = $this->getView();
         $asset = PassportScannerAsset::register($view);
 
-        $inputId = $this->options['id'];
-        $containerId = $this->getId() . '-scanner';
         $config = $this->scannerOptions;
         $config['assetBaseUrl'] = $asset->baseUrl . '/';
-        $config['fields'] = (object) $this->fields;
+        $config['fields'] = $this->fields;
+        Html::addCssClass($this->options, 'js-tjaup-passportscanner-input');
+        $this->options['data-tjaup-passportscanner'] = Json::encode($config);
 
-        // DOM references also support custom input IDs that need CSS escaping.
-        $js = '(function () {'
-            . 'var config = ' . Json::htmlEncode($config) . ';'
-            . 'config.container = document.getElementById(' . Json::htmlEncode($containerId) . ');'
-            . 'config.fields.passport = document.getElementById(' . Json::htmlEncode($inputId) . ');'
-            . 'config.resultTarget = config.fields.passport;'
-            . 'PassportScanner.init(config);'
-            . '})();';
-        $view->registerJs($js, View::POS_END, 'passport-scanner-widget-' . $this->getId());
-
-        return $this->renderInputHtml('text') . Html::tag('div', '', ['id' => $containerId]);
+        return $this->renderInputHtml('text')
+            . Html::tag('div', '', ['data-tjaup-passportscanner-container' => '1']);
     }
 }

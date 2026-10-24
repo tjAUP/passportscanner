@@ -10,21 +10,32 @@
         ZAF: 'ZA', BRA: 'BR', MEX: 'MX', RUS: 'RU', UKR: 'UA', PAK: 'PK', BGD: 'BD',
         LKA: 'LK', NPL: 'NP', KHM: 'KH', LAO: 'LA', MMR: 'MM', MAC: 'MO'
     };
+    var ocrLoader = null;
+    var scannerInstance = 0;
+    var scriptUrl = document.currentScript && document.currentScript.src;
+    var detectedAssetBaseUrl = scriptUrl ? new URL('.', scriptUrl).href : null;
+    var instances = new Map();
+    var initializedInputs = new WeakSet();
+    var lifecycleObserver = null;
+    var cameraOwner = null;
+
+    function findElement(target) {
+        return typeof target === 'string' ? document.querySelector(target) : target || null;
+    }
+
+    // Each container gets its own camera, upload, and OCR scan state.
+    function createScanner() {
     var activeStream = null;
     var activeVideo = null;
     var activeUi = null;
-    var ocrLoader = null;
-    var removalObserver = null;
     var autoScanTimer = null;
     var autoScanBusy = false;
     var autoScanWorkerPromise = null;
     var cameraSequence = 0;
-    var scannerInstance = 0;
     var activeUploadInput = null;
     var activeUploadListener = null;
-    var scriptUrl = document.currentScript && document.currentScript.src;
-    var detectedAssetBaseUrl = scriptUrl ? new URL('.', scriptUrl).href : null;
     var assetBaseUrl = detectedAssetBaseUrl;
+    var scannerApi;
 
     function localAsset(path) {
         if (!assetBaseUrl) throw new Error('Passport OCR assets are not configured. Set assetBaseUrl to the published dist directory.');
@@ -38,10 +49,6 @@
             langPath: localAsset('lang/'),
             workerBlobURL: false
         });
-    }
-
-    function findElement(target) {
-        return typeof target === 'string' ? document.querySelector(target) : target || null;
     }
 
     function emitChange(element, type) {
@@ -141,6 +148,7 @@
 
     function stopCamera() {
         ++cameraSequence;
+        if (cameraOwner === scannerApi) cameraOwner = null;
         if (autoScanTimer) {
             clearTimeout(autoScanTimer);
             autoScanTimer = null;
@@ -947,6 +955,15 @@
         container.hidden = true;
         container.replaceChildren();
         if (!document.documentElement.contains(container)) return;
+        if (config.fieldRoot) {
+            var root = typeof config.fieldRoot === 'string' ?
+                (container.closest ? container.closest(config.fieldRoot) : null) : findElement(config.fieldRoot);
+            Object.keys(config.fields || {}).forEach(function(key) {
+                if (key !== 'passport' && typeof config.fields[key] === 'string') {
+                    config.fields[key] = root && root.querySelector(config.fields[key]);
+                }
+            });
+        }
         var ui = buildScannerUi(config, container);
         if (!ui) return;
         container.hidden = false;
@@ -954,7 +971,9 @@
 
         findElement(ui.cameraOpen).addEventListener('click', async function() {
             try {
+                if (cameraOwner && cameraOwner !== scannerApi) cameraOwner.stopCamera();
                 stopCamera();
+                cameraOwner = scannerApi;
                 var stream = await navigator.mediaDevices.getUserMedia({
                     audio: false,
                     video: {
@@ -964,7 +983,8 @@
                     }
                 });
                 var video = document.querySelector(ui.video);
-                if (activeUi !== ui || !video || !document.documentElement.contains(video)) {
+                if (cameraOwner !== scannerApi || activeUi !== ui || !video ||
+                    !document.documentElement.contains(video)) {
                     stream.getTracks().forEach(function(track) { track.stop(); });
                     return;
                 }
@@ -1047,17 +1067,21 @@
         });
 
         detectCamera(ui);
-        if (!removalObserver && document.body && window.MutationObserver) {
-            removalObserver = new MutationObserver(function() {
-                if (activeUi && !document.documentElement.contains(activeUi.element)) stop();
-            });
-            removalObserver.observe(document.body, { childList: true, subtree: true });
-        }
+    }
+
+    scannerApi = { init: init, stop: stop, stopCamera: stopCamera };
+    return scannerApi;
     }
 
     function initFromElement(element) {
         element = findElement(element);
         if (!element) return;
+        var storedConfig = element.getAttribute('data-tjaup-passportscanner');
+        var config = {};
+        if (storedConfig) {
+            try { config = JSON.parse(storedConfig); }
+            catch (error) { return; }
+        }
         var isInput = element.tagName === 'INPUT';
         var names = {
             name: 'name',
@@ -1071,7 +1095,7 @@
             nationality: 'nationality',
             passportImg: 'passport-img'
         };
-        var fields = {};
+        var fields = Object.assign({}, config.fields || {});
         Object.keys(names).forEach(function(key) {
             var selector = element.getAttribute('data-field-' + names[key]);
             if (selector) fields[key] = selector;
@@ -1081,12 +1105,19 @@
             fields.passport = element;
             container = element._passportScannerContainer;
             if (!container || !document.documentElement.contains(container)) {
-                container = document.createElement('div');
-                element.insertAdjacentElement('afterend', container);
-                element._passportScannerContainer = container;
+                var next = element.nextElementSibling;
+                container = next && next.getAttribute &&
+                    next.getAttribute('data-tjaup-passportscanner-container') !== null ? next : null;
+                if (!container) {
+                    container = document.createElement('div');
+                    element.insertAdjacentElement('afterend', container);
+                }
             }
+            element._passportScannerContainer = container;
         }
-        var config = { container: container, fields: fields, resultTarget: isInput ? element : null };
+        config.container = container;
+        config.fields = fields;
+        config.resultTarget = isInput ? element : null;
         var dateFormat = element.getAttribute('data-date-format');
         var assetBaseUrl = element.getAttribute('data-asset-base-url');
         var countryNames = element.getAttribute('data-country-names');
@@ -1096,17 +1127,70 @@
             try { config.countryNames = JSON.parse(countryNames); }
             catch (error) { config.countryNames = {}; }
         }
+        container._passportScannerInput = element;
+        initializedInputs.add(element);
         return init(config);
     }
 
+    function init(config) {
+        var container = findElement(config && config.container);
+        if (!container || !document.documentElement.contains(container)) return Promise.resolve();
+        var scanner = instances.get(container);
+        if (!scanner) {
+            scanner = createScanner();
+            instances.set(container, scanner);
+        }
+        var options = Object.assign({}, config);
+        options.fields = Object.assign({}, config.fields || {});
+        return scanner.init(options);
+    }
+
+    function stop(target) {
+        if (target == null) {
+            instances.forEach(function(scanner) { scanner.stop(); });
+            return;
+        }
+        var element = findElement(target);
+        var container = instances.has(element) ? element : element && element._passportScannerContainer;
+        if (container && instances.has(container)) instances.get(container).stop();
+    }
+
+    function release(container) {
+        var scanner = instances.get(container);
+        if (!scanner) return;
+        scanner.stop();
+        instances.delete(container);
+        if (container._passportScannerInput) initializedInputs.delete(container._passportScannerInput);
+    }
+
     function autoInit() {
-        var element = document.querySelector('input.js-tjaup-passportscanner-input');
-        if (element) initFromElement(element);
+        var selector = 'input.js-tjaup-passportscanner-input, input[data-tjaup-passportscanner]';
+        var elements = document.querySelectorAll ? document.querySelectorAll(selector) :
+            [document.querySelector('input.js-tjaup-passportscanner-input')];
+        Array.prototype.forEach.call(elements, function(element) {
+            if (element && !initializedInputs.has(element)) initFromElement(element);
+        });
+    }
+
+    function startObserver() {
+        if (lifecycleObserver || !document.body || !window.MutationObserver) return;
+        lifecycleObserver = new window.MutationObserver(function() {
+            instances.forEach(function(scanner, container) {
+                if (!document.documentElement.contains(container)) release(container);
+            });
+            autoInit();
+        });
+        lifecycleObserver.observe(document.body, { childList: true, subtree: true });
+    }
+
+    function start() {
+        autoInit();
+        startObserver();
     }
 
     var api = { init: init, initFromElement: initFromElement, stop: stop };
     window.PassportScanner = api;
     if (typeof module === 'object' && module.exports) module.exports = api;
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', autoInit);
-    else autoInit();
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+    else start();
 })(window);

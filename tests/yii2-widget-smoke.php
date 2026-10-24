@@ -68,7 +68,16 @@ try {
         'method' => 'get',
         'enableClientScript' => false,
     ]);
-    echo $form->field($model, 'passport')->widget(PassportScanner::className(), [])->label(false);
+    echo $form->field($model, 'passport')->widget(PassportScanner::className(), [
+        'options' => ['id' => 'traveler-1-passport'],
+        'fields' => ['firstName' => '.traveler-first-name'],
+        'scannerOptions' => ['fieldRoot' => '.traveler-row', 'dateFormat' => 'd/m/Y'],
+    ])->label(false);
+    echo $form->field($model, 'passport')->widget(PassportScanner::className(), [
+        'options' => ['id' => 'traveler-2-passport'],
+        'fields' => ['firstName' => '.traveler-first-name'],
+        'scannerOptions' => ['fieldRoot' => '.traveler-row', 'dateFormat' => 'Y-m-d'],
+    ])->label(false);
     ActiveForm::end();
     $bundle = $view->assetBundles[PassportScannerAsset::class] ?? null;
     if ($bundle === null) {
@@ -97,31 +106,32 @@ try {
         $count++;
     }
 
-    $configStart = strpos($html, 'var config = ');
-    $configEnd = $configStart === false ? false : strpos($html, ';config.container', $configStart);
-    if ($configStart === false || $configEnd === false) {
-        throw new RuntimeException('The widget did not render scanner configuration.');
+    preg_match_all('/data-tjaup-passportscanner="([^"]+)"/', $html, $configMatches);
+    if (count($configMatches[1]) !== 2) {
+        throw new RuntimeException('Both widget instances must render their own scanner configuration.');
     }
-    $configJson = substr($html, $configStart + strlen('var config = '), $configEnd - $configStart - strlen('var config = '));
-    $config = Json::decode($configJson);
-    if (($config['assetBaseUrl'] ?? null) !== $bundle->baseUrl . '/') {
-        throw new RuntimeException('The widget did not configure the published OCR asset URL.');
+    foreach ($configMatches[1] as $index => $encoded) {
+        $config = Json::decode(html_entity_decode($encoded, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+        if (($config['assetBaseUrl'] ?? null) !== $bundle->baseUrl . '/' ||
+            ($config['fields']['firstName'] ?? null) !== '.traveler-first-name' ||
+            ($config['fieldRoot'] ?? null) !== '.traveler-row' ||
+            ($config['dateFormat'] ?? null) !== ($index === 0 ? 'd/m/Y' : 'Y-m-d')) {
+            throw new RuntimeException('A widget instance has incorrect scanner configuration.');
+        }
     }
     $scriptUrl = $bundle->baseUrl . '/passport-scanner.js';
-    $scriptPosition = strpos($html, 'src="' . $scriptUrl . '"');
-    $initPosition = strpos($html, 'PassportScanner.init(config)');
-    if ($scriptPosition === false || $initPosition === false || $scriptPosition >= $initPosition) {
-        throw new RuntimeException('The scanner script must load before widget initialization.');
+    if (substr_count($html, 'src="' . $scriptUrl . '"') !== 1) {
+        throw new RuntimeException('The scanner script must load once for both widgets.');
     }
     if (strpos($html, 'name="Traveler[passport]"') === false ||
         strpos($html, 'value="A1234567"') === false ||
-        strpos($html, 'getElementById("traveler-passport")') === false ||
-        strpos($html, 'config.resultTarget = config.fields.passport') === false ||
-        strpos($html, '-scanner"></div>') === false) {
-        throw new RuntimeException('The widget did not render and bind the passport input.');
+        strpos($html, 'id="traveler-1-passport"') === false ||
+        strpos($html, 'id="traveler-2-passport"') === false ||
+        substr_count($html, 'data-tjaup-passportscanner-container="1"') !== 2) {
+        throw new RuntimeException('The widgets did not render independent passport inputs and containers.');
     }
 
-    echo "Published {$count} dist files and rendered the Yii2 widget with {$scriptUrl}\n";
+    echo "Published {$count} dist files and rendered two Yii2 widgets with {$scriptUrl}\n";
 } finally {
     Yii::$app = null;
     FileHelper::removeDirectory($assetDirectory);

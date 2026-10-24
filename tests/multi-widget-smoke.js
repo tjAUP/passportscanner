@@ -1,0 +1,154 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+const script = fs.readFileSync(path.join(__dirname, '..', 'dist', 'passport-scanner.js'), 'utf8');
+const mrz = 'P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<\n'
+    + 'L898902C36UTO7408122F1204159ZE184226B<<<<<10';
+const listeners = {};
+const controls = {};
+const travelers = [];
+const connected = new Set();
+const streams = [];
+let mutationCallback;
+
+function element(attributes = {}) {
+    return {
+        attributes,
+        listeners: {},
+        hidden: false,
+        value: '',
+        files: [],
+        classList: { add() {}, remove() {} },
+        async play() {},
+        getAttribute(name) { return this.attributes[name] ?? null; },
+        addEventListener(name, callback) { this.listeners[name] = callback; },
+        removeEventListener(name) { delete this.listeners[name]; },
+        dispatchEvent(event) {
+            if (this.listeners[event.type]) this.listeners[event.type](event);
+            return true;
+        },
+        replaceChildren() {},
+        click() {}
+    };
+}
+
+function addTraveler() {
+    const firstName = element();
+    const container = element({ 'data-tjaup-passportscanner-container': '1' });
+    container.isContainer = true;
+    container.closest = selector => selector === '.traveler-row' ? {
+        querySelector: field => field === '.first-name' ? firstName : null
+    } : null;
+    const passport = element({
+        'data-tjaup-passportscanner': JSON.stringify({
+            fields: { firstName: '.first-name' },
+            fieldRoot: '.traveler-row',
+            dateFormat: 'Y-m-d',
+            assetBaseUrl: 'https://example.test/assets/passportscanner/'
+        })
+    });
+    passport.tagName = 'INPUT';
+    passport.nextElementSibling = container;
+    connected.add(container);
+    const traveler = { passport, firstName, container };
+    travelers.push(traveler);
+    return traveler;
+}
+
+const first = addTraveler();
+const second = addTraveler();
+const document = {
+    currentScript: null,
+    baseURI: 'https://example.test/',
+    readyState: 'loading',
+    body: {},
+    head: { appendChild() {} },
+    documentElement: { contains(node) { return !node.isContainer || connected.has(node); } },
+    addEventListener(name, callback) { listeners[name] = callback; },
+    getElementById() { return null; },
+    createElement() { return element(); },
+    querySelectorAll() {
+        return travelers.filter(traveler => connected.has(traveler.container)).map(traveler => traveler.passport);
+    },
+    querySelector(selector) { return controls[selector] ||= element(); }
+};
+const window = {
+    MutationObserver: class {
+        constructor(callback) { mutationCallback = callback; }
+        observe() {}
+    },
+    Tesseract: {
+        async createWorker() {
+            return {
+                async recognize() { return { data: { text: mrz } }; },
+                async terminate() {}
+            };
+        }
+    }
+};
+const navigator = {
+    mediaDevices: {
+        async getUserMedia() {
+            const track = { stopped: false, stop() { this.stopped = true; } };
+            streams.push(track);
+            return { getTracks() { return [track]; } };
+        }
+    }
+};
+class FakeEvent {
+    constructor(type, options = {}) { this.type = type; this.detail = options.detail; }
+}
+vm.runInNewContext(script, {
+    window, document, navigator, URL, Event: FakeEvent, CustomEvent: FakeEvent,
+    setTimeout, clearTimeout, Promise
+});
+
+async function scan(instanceNumber) {
+    const input = controls[`#passport-scanner-${instanceNumber}-file`];
+    assert.equal(typeof input.listeners.change, 'function');
+    input.files = [{ type: 'image/jpeg', name: 'passport.jpg' }];
+    input.listeners.change.call(input);
+    await new Promise(resolve => setTimeout(resolve, 0));
+}
+
+(async () => {
+    listeners.DOMContentLoaded();
+    assert.equal(typeof mutationCallback, 'function');
+    await scan(1);
+    assert.equal(first.passport.value, 'L898902C3');
+    assert.equal(first.firstName.value, 'ANNA MARIA');
+    assert.equal(second.passport.value, '');
+
+    await scan(2);
+    assert.equal(second.passport.value, 'L898902C3');
+    assert.equal(second.firstName.value, 'ANNA MARIA');
+
+    const third = addTraveler();
+    mutationCallback();
+    await scan(3);
+    assert.equal(third.passport.value, 'L898902C3');
+    assert.equal(third.firstName.value, 'ANNA MARIA');
+
+    connected.delete(second.container);
+    mutationCallback();
+    window.PassportScanner.stop(first.passport);
+    first.passport.value = '';
+    await scan(1);
+    assert.equal(first.passport.value, '');
+    third.passport.value = '';
+    await scan(3);
+    assert.equal(third.passport.value, 'L898902C3');
+
+    await window.PassportScanner.initFromElement(first.passport);
+    await controls['#passport-scanner-4-camera-open'].listeners.click();
+    assert.equal(streams[0].stopped, false);
+    await controls['#passport-scanner-3-camera-open'].listeners.click();
+    assert.equal(streams[0].stopped, true);
+    assert.equal(streams[1].stopped, false);
+    window.PassportScanner.stop();
+    assert.equal(streams[1].stopped, true);
+
+    console.log('Independent scanner instances survived dynamic add, remove, and targeted stop');
+})().catch(error => { console.error(error); process.exitCode = 1; });

@@ -148,6 +148,8 @@ midnight UTC. The older `ymd` and `dmy` settings still produce their original
 `Y-m-d` and `d/m/Y` outputs.
 PHP-style formatting is available from v0.8.0.
 
+### Field keys
+
 | Field key | Scanned value |
 | --- | --- |
 | `name` | Full name |
@@ -164,12 +166,64 @@ PHP-style formatting is available from v0.8.0.
 The scanner dispatches a bubbling `passportscanner:result` event on the
 passport input after a usable scan. The event's `detail.fields` contains the
 accepted MRZ values. Your form code can listen for that event if it needs to
-react to a scan. The widget starts one scanner at a time. If you remove a
-dynamically shown form, call `PassportScanner.stop()` in its JavaScript close
-handler.
+react to a scan. Each widget keeps its own scanner state, so several travelers
+can be scanned on the same page. Opening a camera closes any other scanner's
+camera; image uploads remain independent.
 
 Check every populated value against the passport before saving. The widget
 does not save the form or upload the image.
+
+### Multiple or dynamic travelers
+
+For repeated traveler rows, use a unique Yii2 model index for each traveler
+and scope field selectors to that row. Inside an existing `ActiveForm`:
+
+```php
+<?php
+use TjAup\PassportScanner;
+use yii\helpers\Html;
+
+foreach ($travelers as $index => $traveler) {
+    echo Html::beginTag('div', ['class' => 'traveler-row']);
+    echo $form->field($traveler, "[$index]firstName")
+        ->textInput(['class' => 'traveler-first-name']);
+    echo $form->field($traveler, "[$index]passportImg")
+        ->fileInput(['class' => 'traveler-passport-image']);
+    echo $form->field($traveler, "[$index]passport")
+        ->widget(PassportScanner::class, [
+            'fields' => [
+                'firstName' => '.traveler-first-name',
+                'passportImg' => '.traveler-passport-image',
+            ],
+            'scannerOptions' => [
+                'fieldRoot' => '.traveler-row',
+                'dateFormat' => 'Y-m-d',
+            ],
+        ]);
+    echo Html::endTag('div');
+}
+```
+
+`fieldRoot` resolves each field selector inside the nearest matching ancestor
+of that scanner. Other [field keys](#field-keys) work the
+same way. The browser script initializes widgets added to the page later and
+cleans up scanners whose rows are removed. If the first widget will arrive
+through AJAX, register the asset bundle in the parent view so the script is
+already loaded:
+
+```php
+<?php
+use TjAup\PassportScanner\Yii2\PassportScannerAsset;
+
+PassportScannerAsset::register($this);
+```
+
+If a row is hidden but kept in the DOM, call
+`PassportScanner.stop(passportInput)` when hiding it and
+`PassportScanner.initFromElement(passportInput)` when showing it again.
+`PassportScanner.stop()` without an argument stops all scanners. Keep Yii2
+input IDs and model indexes unique when cloning rows. Multiple-widget support
+is available from v0.9.0.
 
 ## Local OCR assets and privacy
 
