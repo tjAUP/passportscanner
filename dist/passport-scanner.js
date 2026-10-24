@@ -1119,9 +1119,11 @@
         config.fields = fields;
         config.resultTarget = isInput ? element : null;
         var dateFormat = element.getAttribute('data-date-format');
+        var fieldRoot = element.getAttribute('data-field-root');
         var assetBaseUrl = element.getAttribute('data-asset-base-url');
         var countryNames = element.getAttribute('data-country-names');
         if (dateFormat) config.dateFormat = dateFormat;
+        if (fieldRoot) config.fieldRoot = fieldRoot;
         if (assetBaseUrl) config.assetBaseUrl = assetBaseUrl;
         if (countryNames) {
             try { config.countryNames = JSON.parse(countryNames); }

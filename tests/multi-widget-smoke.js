@@ -34,14 +34,18 @@ function element(attributes = {}) {
     };
 }
 
-function addTraveler() {
+function addTraveler(plainHtml = false) {
     const firstName = element();
     const container = element({ 'data-tjaup-passportscanner-container': '1' });
     container.isContainer = true;
     container.closest = selector => selector === '.traveler-row' ? {
         querySelector: field => field === '.first-name' ? firstName : null
     } : null;
-    const passport = element({
+    const passport = element(plainHtml ? {
+        'data-field-first-name': '.first-name',
+        'data-field-root': '.traveler-row',
+        'data-asset-base-url': 'https://example.test/assets/passportscanner/'
+    } : {
         'data-tjaup-passportscanner': JSON.stringify({
             fields: { firstName: '.first-name' },
             fieldRoot: '.traveler-row',
@@ -49,6 +53,7 @@ function addTraveler() {
             assetBaseUrl: 'https://example.test/assets/passportscanner/'
         })
     });
+    if (plainHtml) passport.className = 'js-tjaup-passportscanner-input';
     passport.tagName = 'INPUT';
     passport.nextElementSibling = container;
     connected.add(container);
@@ -131,6 +136,22 @@ async function scan(instanceNumber) {
     assert.equal(third.passport.value, 'L898902C3');
     assert.equal(third.firstName.value, 'ANNA MARIA');
 
+    const fourth = addTraveler(true);
+    const fifth = addTraveler(true);
+    const fourthResults = [];
+    const fifthResults = [];
+    fourth.passport.addEventListener('passportscanner:result', event => fourthResults.push(event.detail));
+    fifth.passport.addEventListener('passportscanner:result', event => fifthResults.push(event.detail));
+    mutationCallback();
+    await scan(4);
+    assert.equal(fourth.firstName.value, 'ANNA MARIA');
+    assert.equal(fifth.firstName.value, '');
+    assert.equal(fourthResults[0].fields.passport, 'L898902C3');
+    assert.equal(fifthResults.length, 0);
+    await scan(5);
+    assert.equal(fifth.firstName.value, 'ANNA MARIA');
+    assert.equal(fifthResults[0].fields.passport, 'L898902C3');
+
     connected.delete(second.container);
     mutationCallback();
     window.PassportScanner.stop(first.passport);
@@ -142,7 +163,7 @@ async function scan(instanceNumber) {
     assert.equal(third.passport.value, 'L898902C3');
 
     await window.PassportScanner.initFromElement(first.passport);
-    await controls['#passport-scanner-4-camera-open'].listeners.click();
+    await controls['#passport-scanner-6-camera-open'].listeners.click();
     assert.equal(streams[0].stopped, false);
     await controls['#passport-scanner-3-camera-open'].listeners.click();
     assert.equal(streams[0].stopped, true);
@@ -150,5 +171,5 @@ async function scan(instanceNumber) {
     window.PassportScanner.stop();
     assert.equal(streams[1].stopped, true);
 
-    console.log('Independent scanner instances survived dynamic add, remove, and targeted stop');
+    console.log('Yii2 and plain HTML scanner instances survived dynamic add, remove, and targeted stop');
 })().catch(error => { console.error(error); process.exitCode = 1; });
