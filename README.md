@@ -76,8 +76,8 @@ scanner does not depend on it.
         <option value="">Select</option><option value="male">Male</option><option value="female">Female</option>
       </select>
     </label>
-    <label for="traveler-0-passport">Passport number</label>
-    <input id="traveler-0-passport" name="travelers[0][passportNo]" class="traveler-passport-no">
+    <label for="traveler-0-passport-no">Passport number</label>
+    <input id="traveler-0-passport-no" name="travelers[0][passportNo]" class="traveler-passport-no">
     <input type="hidden" name="travelers[0][passport_scan]"
              class="js-tjaup-passportscanner-input" disabled
              data-field-root=".traveler-row"
@@ -182,7 +182,7 @@ scanner container. CSS selectors or DOM elements can be used for fields.
 <input id="last-name" name="lastName">
 <select id="title" name="title"><option value="MR">Mr</option><option value="MS">Ms</option></select>
 <select id="gender" name="gender"><option value="male">Male</option><option value="female">Female</option></select>
-<input id="passport" name="passportNo">
+<input id="passport-no" name="passportNo">
 <input id="dob" name="dob" type="date">
 <input id="expiry" name="expiry" type="date">
 <select id="nationality" name="nationality"><option value="Malaysia">Malaysia</option></select>
@@ -203,7 +203,7 @@ PassportScanner.init({
         lastName: '#last-name',
         title: '#title',
         gender: '#gender',
-        passportNo: '#passport',
+        passportNo: '#passport-no',
         dob: '#dob',
         expiry: '#expiry',
         nationality: '#nationality',
