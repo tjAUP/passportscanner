@@ -168,7 +168,8 @@ the separate passport number field with `data-field-passport-no` or
 and `data-field-passport-img`.
 Optional attributes are `data-date-format`, `data-country-names` (JSON),
 `data-auto-capture-count`, `data-auto-capture-hold-seconds`, and
-`data-asset-base-url`.
+`data-asset-base-url`. Add `data-log-results="true"` to log scan values in
+the browser console.
 
 ## Use the JavaScript API
 
@@ -242,6 +243,7 @@ time, while image uploads remain independent.
 | `autoCaptureCount` | Total automatic camera frames, including the first readable frame; integer 1–10 |
 | `autoCaptureHoldSeconds` | Time over which automatic camera frames are collected; 0–30 seconds |
 | `assetBaseUrl` | URL of the published `dist/` directory; inferred from a script tag |
+| `logResults` | Log an array containing one complete result object for each scan; default `false` |
 
 By default, auto capture takes 4 frames over 3 seconds. Set
 `autoCaptureCount: 1` to capture immediately after the first readable MRZ
@@ -256,6 +258,16 @@ one frame, and uploaded images are scanned once.
 require valid MRZ checks. `passportImg` must be a file input if you want to
 attach the selected or captured image to a form. The scanner never submits
 the form.
+
+Set `logResults: true` in `PassportScanner.init(config)` to inspect scans in
+the browser console. For class-based inputs, set `data-log-results="true"` on
+the scanner input. Each scan logs an array with one object containing every
+supported MRZ value. Unread or unverified values are `null`, for example
+`[{ passportNo: null, dob: '1974-08-12', expiry: null, ... }]`. The key for
+passport expiry is `expiry`, even if your form input is named `passportExp`.
+An unreadable image logs the same keys with `null` values. The image and raw
+OCR text are never logged. This option exposes passport details in the local
+browser console, so enable it only while debugging.
 
 `detail.fields` includes every accepted MRZ value, even when no form field is
 mapped to it:

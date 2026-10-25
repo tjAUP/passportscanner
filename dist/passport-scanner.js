@@ -627,8 +627,9 @@
         emitChange(field, 'change');
     }
 
-    function applyPassportDetails(details, ui) {
+    function passportValues(details, ui) {
         var values = {};
+        if (!details) return values;
         if (details.nameLooksReadable) {
             values.name = details.fullName;
             values.firstName = details.givenNames;
@@ -654,6 +655,25 @@
         var countryName = countryCode && ui.countryNames[countryCode];
         if (countryName) values.nationality = countryName;
 
+        return values;
+    }
+
+    function logScanResults(values, ui) {
+        if (!ui.logResults || !window.console || typeof window.console.log !== 'function') return;
+        var keys = ['name', 'firstName', 'lastName', 'title', 'gender', 'passport', 'passportNo',
+            'dob', 'expiry', 'nationality', 'nationalityCode', 'documentCode',
+            'issuingCountryCode', 'sex', 'optionalData'];
+        var result = {};
+        keys.forEach(function(key) {
+            result[key] = Object.prototype.hasOwnProperty.call(values, key) ? values[key] : null;
+        });
+        try { window.console.log([result]); }
+        catch (error) { /* Console logging must not interrupt form filling. */ }
+    }
+
+    function applyPassportDetails(details, ui) {
+        var values = passportValues(details, ui);
+
         var filledValues = new Map();
         Object.keys(values).forEach(function(key) {
             var field = ui.fields[key] && findElement(ui.fields[key]);
@@ -666,6 +686,7 @@
         setStatus(hasCompletePassportDetails(details)
             ? 'Passport details filled. Please verify each field before saving.'
             : 'Verified passport details filled. Check the image and enter any missing or incorrect details before saving.', ui);
+        logScanResults(values, ui);
         (ui.resultTarget || ui.element).dispatchEvent(new CustomEvent('passportscanner:result', {
             bubbles: true,
             detail: {
@@ -852,6 +873,7 @@
             if (options.onCandidate) options.onCandidate(details);
             if (!hasUsablePassportDetails(details)) {
                 if (options.autoCapture) return false;
+                logScanResults(passportValues(details, ui), ui);
                 throw new Error('Could not verify enough passport details. No fields were changed. Try a closer image or enter the details manually.');
             }
             if (options.previewOnly) return details;
@@ -1182,12 +1204,14 @@
         var dateFormat = element.getAttribute('data-date-format');
         var autoCaptureCount = element.getAttribute('data-auto-capture-count');
         var autoCaptureHoldSeconds = element.getAttribute('data-auto-capture-hold-seconds');
+        var logResults = element.getAttribute('data-log-results');
         var fieldRoot = element.getAttribute('data-field-root');
         var assetBaseUrl = element.getAttribute('data-asset-base-url');
         var countryNames = element.getAttribute('data-country-names');
         if (dateFormat) config.dateFormat = dateFormat;
         if (autoCaptureCount) config.autoCaptureCount = autoCaptureCount;
         if (autoCaptureHoldSeconds) config.autoCaptureHoldSeconds = autoCaptureHoldSeconds;
+        if (logResults !== null) config.logResults = logResults === 'true';
         if (fieldRoot) config.fieldRoot = fieldRoot;
         if (assetBaseUrl) config.assetBaseUrl = assetBaseUrl;
         if (countryNames) {

@@ -29,6 +29,7 @@ function element(attributes = {}) {
 
 async function runCase(settings, expectedCaptures, useAttributes = false, recognizedTexts = [mrz], expectRecoveredName = false, useBitmap = false) {
     const captures = [];
+    const loggedResults = [];
     const controls = {};
     const container = element({ 'data-tjaup-passportscanner-container': '1' });
     const passport = element(useAttributes ? {
@@ -78,6 +79,7 @@ async function runCase(settings, expectedCaptures, useAttributes = false, recogn
         }
     };
     const window = {
+        console: { log(value) { loggedResults.push(value); } },
         Tesseract: {
             async createWorker() {
                 return {
@@ -127,6 +129,8 @@ async function runCase(settings, expectedCaptures, useAttributes = false, recogn
     await controls['#passport-scanner-1-camera-open'].listeners.click();
     const detail = await result;
     assert.equal(detail.fields.passportNo, 'L898902C3');
+    assert.equal(loggedResults.length, settings.logResults ? 1 : 0);
+    if (settings.logResults) assert.equal(loggedResults[0][0].passportNo, 'L898902C3');
     if (expectRecoveredName) assert.equal(detail.fields.firstName, 'ANNA MARIA');
     assert.equal(captures.length - (useBitmap ? 1 : 0), expectedCaptures);
     window.PassportScanner.stop();
@@ -137,6 +141,7 @@ async function runCase(settings, expectedCaptures, useAttributes = false, recogn
     const defaults = await runCase({}, 4);
     assert.ok(defaults.at(-1) - defaults[0] >= 2800, 'default capture should hold for three seconds');
     await runCase({ autoCaptureCount: 1 }, 1);
+    await runCase({ autoCaptureCount: 1, logResults: true }, 1);
     const counted = await runCase({ autoCaptureCount: 4, autoCaptureHoldSeconds: 0.12 }, 4);
     assert.ok(counted.at(-1) - counted[0] >= 80, 'counted samples should span the hold time');
     const timed = await runCase({ autoCaptureHoldSeconds: 0.12 }, 2);

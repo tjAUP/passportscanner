@@ -79,7 +79,9 @@ const mrz = 'P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<\n'
 let recognizedText = mrz;
 let recognizedQueue = [];
 let availabilityRequests = 0;
+const loggedResults = [];
 const window = {
+    console: { log(value) { loggedResults.push(value); } },
     Tesseract: {
         async createWorker() {
             return {
@@ -143,6 +145,7 @@ vm.runInNewContext(script, context);
     assert.equal(result.verifiedCount, 3);
     assert.equal(result.complete, true);
     assert.equal('image' in result, false);
+    assert.equal(loggedResults.length, 0, 'console logging is off by default');
 
     result = undefined;
     recognizedText = mrz.replace('L898902C36', 'L898902C37');
@@ -225,6 +228,30 @@ vm.runInNewContext(script, context);
     selfMappedScanInput.listeners.change.call(selfMappedScanInput);
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(passport.value, '', 'scanner input must never become the passport number field');
+
+    passport.attributes['data-log-results'] = 'true';
+    recognizedText = mrz.replace('L898902C36', 'L898902C37');
+    await window.PassportScanner.initFromElement(passport);
+    const loggedScanInput = controls[`#passport-scanner-${formats.length + 4}-file`];
+    loggedScanInput.files = [{ type: 'image/jpeg', name: 'partial-passport.jpg' }];
+    loggedScanInput.listeners.change.call(loggedScanInput);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(loggedResults.length, 1);
+    assert.equal(Array.isArray(loggedResults[0]), true);
+    assert.equal(loggedResults[0].length, 1);
+    assert.equal(loggedResults[0][0].passportNo, null);
+    assert.equal(loggedResults[0][0].expiry, '2012-04-15');
+    assert.equal(loggedResults[0][0].firstName, 'ANNA MARIA');
+    assert.equal('passportImg' in loggedResults[0][0], false);
+
+    recognizedText = 'not a passport';
+    loggedScanInput.files = [{ type: 'image/jpeg', name: 'unreadable-passport.jpg' }];
+    loggedScanInput.listeners.change.call(loggedScanInput);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(loggedResults.length, 2);
+    assert.equal(loggedResults[1][0].passportNo, null);
+    assert.equal(loggedResults[1][0].expiry, null);
+    assert.equal(loggedResults[1][0].name, null);
 
     console.log('MRZ scan filled fields, matched PHP date formats, and emitted a verified result');
 })().catch(error => { console.error(error); process.exitCode = 1; });
