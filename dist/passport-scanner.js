@@ -606,6 +606,19 @@
         return candidate.score > current.score;
     }
 
+    function keepReadableName(candidate, current) {
+        if (!candidate || !current || candidate.nameLooksReadable || !current.nameLooksReadable
+            || !candidate.dateOfBirth || candidate.dateOfBirth !== current.dateOfBirth
+            || !candidate.passportExpiry || candidate.passportExpiry !== current.passportExpiry
+            || candidate.nationalityCode !== current.nationalityCode) return candidate;
+        candidate.fullName = current.fullName;
+        candidate.givenNames = current.givenNames;
+        candidate.surname = current.surname;
+        candidate.nameLooksReadable = true;
+        candidate.score += 1;
+        return candidate;
+    }
+
     function fillField(selector, value) {
         var field = selector && findElement(selector);
         if (!field || !value) return;
@@ -725,13 +738,6 @@
         return blob ? { file: new File([blob], 'passport-camera.jpg', { type: 'image/jpeg' }), sharpness: sharpness } : null;
     }
 
-    function isBetterHoldCandidate(candidate, current) {
-        if (!candidate) return false;
-        if (!current) return true;
-        if (candidate.nameLooksReadable !== current.nameLooksReadable) return candidate.nameLooksReadable;
-        return isBetterMrzCandidate(candidate, current);
-    }
-
     function getCameraMrzRegion(ui) {
         var video = findElement(ui.video);
         var mrz = findElement(ui.mrzGuide);
@@ -792,8 +798,7 @@
                     var cameraResult = await withTimeout(worker.recognize(cameraCrop), 15000, 'Passport OCR timed out.');
                     if (activeUi !== ui) return null;
                     best = parseMrzDetails(findMrzLines(cameraResult.data.text || ''), ui);
-                    if (hasUsablePassportDetails(best)) return readNameLine(cameraCrop, best);
-                    if (options.cropOnly) return best;
+                    if (hasCompletePassportDetails(best) || options.cropOnly) return readNameLine(cameraCrop, best);
                     croppedImage = cameraCrop;
                 }
                 // Crop-specific OCR settings persist on the Tesseract worker, so reset them for every pass.
@@ -809,7 +814,7 @@
                     croppedImage = await prepareMrzCrop(imageFile);
                     return readNameLine(croppedImage, best);
                 }
-                if (!hasUsablePassportDetails(best) && window.createImageBitmap) {
+                if ((!best || !best.passportValid) && window.createImageBitmap) {
                     if (worker.setParameters) {
                         await worker.setParameters({
                             tessedit_pageseg_mode: 6,
@@ -821,7 +826,7 @@
                     if (activeUi !== ui) return null;
                     var croppedDetails = parseMrzDetails(findMrzLines(result.data.text || ''), ui);
                     if (isBetterMrzCandidate(croppedDetails, best)) best = croppedDetails;
-                    if (!hasUsablePassportDetails(best) && worker.setParameters) {
+                    if ((!best || !best.passportValid) && worker.setParameters) {
                         await worker.setParameters({ tessedit_pageseg_mode: 11 });
                         result = await withTimeout(worker.recognize(croppedImage), 45000, 'Passport OCR timed out. Try a smaller or clearer image.');
                         if (activeUi !== ui) return null;
@@ -946,8 +951,8 @@
                                     silent: true,
                                     isCurrent: function() { return activeUi === ui && activeVideo === video && sequence === cameraSequence; }
                                 });
-                                if (extraDetails && isBetterHoldCandidate(extraDetails, best.details)) {
-                                    best = { sample: heldSamples[j], details: extraDetails };
+                                if (extraDetails && isBetterMrzCandidate(extraDetails, best.details)) {
+                                    best = { sample: heldSamples[j], details: keepReadableName(extraDetails, best.details) };
                                 }
                                 if (hasCompletePassportDetails(best.details)) break;
                             } catch (error) {

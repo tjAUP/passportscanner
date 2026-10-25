@@ -27,7 +27,7 @@ function element(attributes = {}) {
     };
 }
 
-async function runCase(settings, expectedCaptures, useAttributes = false) {
+async function runCase(settings, expectedCaptures, useAttributes = false, recognizedTexts = [mrz], expectRecoveredName = false, useBitmap = false) {
     const captures = [];
     const controls = {};
     const container = element({ 'data-tjaup-passportscanner-container': '1' });
@@ -81,12 +81,14 @@ async function runCase(settings, expectedCaptures, useAttributes = false) {
         Tesseract: {
             async createWorker() {
                 return {
-                    async recognize() { return { data: { text: mrz } }; },
+                    async recognize() { return { data: { text: recognizedTexts.shift() || mrz } }; },
                     async terminate() {}
                 };
             }
         }
     };
+    const fakeBitmap = async () => ({ width: 100, height: 75, close() {} });
+    if (useBitmap) window.createImageBitmap = fakeBitmap;
     const navigator = {
         mediaDevices: {
             async enumerateDevices() { return [{ kind: 'videoinput' }]; },
@@ -103,7 +105,8 @@ async function runCase(settings, expectedCaptures, useAttributes = false) {
     }
     vm.runInNewContext(script, {
         window, document, navigator, URL, Event: FakeEvent, CustomEvent: FakeEvent,
-        File: FakeFile, setTimeout, clearTimeout, Promise, Uint8ClampedArray
+        File: FakeFile, setTimeout, clearTimeout, Promise, Uint8ClampedArray,
+        createImageBitmap: useBitmap ? fakeBitmap : undefined
     });
 
     const result = new Promise((resolve, reject) => {
@@ -124,7 +127,8 @@ async function runCase(settings, expectedCaptures, useAttributes = false) {
     await controls['#passport-scanner-1-camera-open'].listeners.click();
     const detail = await result;
     assert.equal(detail.fields.passportNo, 'L898902C3');
-    assert.equal(captures.length, expectedCaptures);
+    if (expectRecoveredName) assert.equal(detail.fields.firstName, 'ANNA MARIA');
+    assert.equal(captures.length - (useBitmap ? 1 : 0), expectedCaptures);
     window.PassportScanner.stop();
     return captures;
 }
@@ -139,5 +143,10 @@ async function runCase(settings, expectedCaptures, useAttributes = false) {
     assert.ok(timed.at(-1) - timed[0] >= 80, 'time-only samples should span the hold time');
     await runCase({ autoCaptureCount: 99, autoCaptureHoldSeconds: 0 }, 10);
     await runCase({ autoCaptureCount: 2, autoCaptureHoldSeconds: 0.05 }, 2, true);
+    const badPassport = mrz.replace('L898902C36', 'L898902C37');
+    const unreadableName = mrz.replace('ERIKSSON<<ANNA<MARIA', '<<<<<<<<<<<<<<<<<<<<');
+    await runCase({ autoCaptureCount: 2, autoCaptureHoldSeconds: 0 }, 2, false,
+        [badPassport, unreadableName], true);
+    await runCase({ autoCaptureCount: 1 }, 1, false, [badPassport, mrz], false, true);
     console.log('Auto capture count, hold duration, limits, and HTML attributes worked');
 })().catch(error => { console.error(error); process.exitCode = 1; });

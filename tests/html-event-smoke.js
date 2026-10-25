@@ -52,7 +52,13 @@ const document = {
     documentElement: { contains() { return true; } },
     addEventListener(name, callback) { listeners[name] = callback; },
     getElementById() { return null; },
-    createElement() { return element(); },
+    createElement(tag) {
+        if (tag === 'canvas') return {
+            getContext() { return { drawImage() {} }; },
+            toBlob(callback) { callback({ type: 'image/jpeg' }); }
+        };
+        return element();
+    },
     querySelector(selector) {
         if (selector === 'input.js-tjaup-passportscanner-input') return passport;
         if (selector === '#passport') return passport;
@@ -69,12 +75,13 @@ const document = {
 const mrz = 'P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<\n'
     + 'L898902C36UTO7408122F1204159ZE184226B<<<<<10';
 let recognizedText = mrz;
+let recognizedQueue = [];
 let availabilityRequests = 0;
 const window = {
     Tesseract: {
         async createWorker() {
             return {
-                async recognize() { return { data: { text: recognizedText } }; },
+                async recognize() { return { data: { text: recognizedQueue.shift() || recognizedText } }; },
                 async terminate() {}
             };
         }
@@ -83,9 +90,12 @@ const window = {
 class FakeEvent {
     constructor(type, options = {}) { this.type = type; this.detail = options.detail; }
 }
+class FakeFile {
+    constructor(parts, name, options) { this.parts = parts; this.name = name; this.type = options.type; }
+}
 const context = {
     window, document, navigator: {}, URL, Event: FakeEvent, CustomEvent: FakeEvent,
-    setTimeout, clearTimeout, Promise,
+    File: FakeFile, setTimeout, clearTimeout, Promise,
     fetch() { availabilityRequests++; throw new Error('Availability requests are obsolete'); }
 };
 vm.runInNewContext(script, context);
@@ -141,6 +151,20 @@ vm.runInNewContext(script, context);
     assert.equal('passport' in result.fields, false);
     assert.equal('passportNo' in result.fields, false);
     assert.equal(passport.value, 'L898902C3');
+
+    result = undefined;
+    recognizedQueue = [mrz.replace('L898902C36', 'L898902C37'), mrz];
+    const fakeBitmap = async () => ({ width: 100, height: 100, close() {} });
+    window.createImageBitmap = fakeBitmap;
+    context.createImageBitmap = fakeBitmap;
+    scanInput.files = [{ type: 'image/jpeg', name: 'recoverable-passport.jpg' }];
+    scanInput.listeners.change.call(scanInput);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(result.checks.passport, true);
+    assert.equal(result.fields.passportNo, 'L898902C3');
+    assert.equal(recognizedQueue.length, 0, 'a crop should retry an unverified passport number');
+    window.createImageBitmap = undefined;
+    context.createImageBitmap = undefined;
 
     result = undefined;
     recognizedText = mrz.replace('ZE184226B<<<<<1', 'ZE184226B<<<<<2');
