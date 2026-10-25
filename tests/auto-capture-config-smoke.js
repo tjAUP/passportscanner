@@ -79,7 +79,10 @@ async function runCase(settings, expectedCaptures, useAttributes = false, recogn
         }
     };
     const window = {
-        console: { log(value) { loggedResults.push(value); } },
+        console: { log(label, value) {
+            assert.equal(label, 'PassportScanner scan results');
+            loggedResults.push(value);
+        } },
         Tesseract: {
             async createWorker() {
                 return {

@@ -261,13 +261,15 @@ the form.
 
 Set `logResults: true` in `PassportScanner.init(config)` to inspect scans in
 the browser console. For class-based inputs, set `data-log-results="true"` on
-the scanner input. Each scan logs an array with one object containing every
-supported MRZ value. Unread or unverified values are `null`, for example
+the scanner input. A log labeled `PassportScanner scan results` contains an
+array with one object for each scan. It includes every supported MRZ value;
+unread or unverified values are `null`, for example
 `[{ passportNo: null, dob: '1974-08-12', expiry: null, ... }]`. The key for
 passport expiry is `expiry`, even if your form input is named `passportExp`.
-An unreadable image logs the same keys with `null` values. The image and raw
-OCR text are never logged. This option exposes passport details in the local
-browser console, so enable it only while debugging.
+When a scan fails verification, all field values are `null`; `accepted`,
+`verifiedCount`, and `checks` explain which checks passed. The image and raw
+OCR text are never logged. This option exposes accepted passport details in
+the local browser console, so enable it only while debugging.
 
 `detail.fields` includes every accepted MRZ value, even when no form field is
 mapped to it:

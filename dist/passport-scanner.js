@@ -606,6 +606,17 @@
         return candidate.score > current.score;
     }
 
+    function findBestMrzDetails(text, ui) {
+        var lines = String(text || '').split(/\r?\n/);
+        var best = null;
+        for (var index = 0; index < lines.length; index++) {
+            var candidate = parseMrzDetails(findMrzLines(lines.slice(index).join('\n')), ui);
+            if (isBetterMrzCandidate(candidate, best)) best = candidate;
+            if (hasCompletePassportDetails(best)) break;
+        }
+        return best;
+    }
+
     function keepReadableName(candidate, current) {
         if (!candidate || !current || candidate.nameLooksReadable || !current.nameLooksReadable
             || !candidate.dateOfBirth || candidate.dateOfBirth !== current.dateOfBirth
@@ -658,16 +669,19 @@
         return values;
     }
 
-    function logScanResults(values, ui) {
+    function logScanResults(values, ui, details, accepted) {
         if (!ui.logResults || !window.console || typeof window.console.log !== 'function') return;
         var keys = ['name', 'firstName', 'lastName', 'title', 'gender', 'passport', 'passportNo',
             'dob', 'expiry', 'nationality', 'nationalityCode', 'documentCode',
             'issuingCountryCode', 'sex', 'optionalData'];
         var result = {};
         keys.forEach(function(key) {
-            result[key] = Object.prototype.hasOwnProperty.call(values, key) ? values[key] : null;
+            result[key] = accepted && Object.prototype.hasOwnProperty.call(values, key) ? values[key] : null;
         });
-        try { window.console.log([result]); }
+        result.accepted = accepted;
+        result.verifiedCount = details ? details.verifiedCount : 0;
+        result.checks = details ? details.checks : null;
+        try { window.console.log('PassportScanner scan results', [result]); }
         catch (error) { /* Console logging must not interrupt form filling. */ }
     }
 
@@ -686,7 +700,7 @@
         setStatus(hasCompletePassportDetails(details)
             ? 'Passport details filled. Please verify each field before saving.'
             : 'Verified passport details filled. Check the image and enter any missing or incorrect details before saving.', ui);
-        logScanResults(values, ui);
+        logScanResults(values, ui, details, true);
         (ui.resultTarget || ui.element).dispatchEvent(new CustomEvent('passportscanner:result', {
             bubbles: true,
             detail: {
@@ -819,7 +833,7 @@
                     var cameraCrop = await prepareMrzCrop(imageFile, options.cropRegion);
                     var cameraResult = await withTimeout(worker.recognize(cameraCrop), 15000, 'Passport OCR timed out.');
                     if (activeUi !== ui) return null;
-                    best = parseMrzDetails(findMrzLines(cameraResult.data.text || ''), ui);
+                    best = findBestMrzDetails(cameraResult.data.text || '', ui);
                     if (hasCompletePassportDetails(best) || options.cropOnly) return readNameLine(cameraCrop, best);
                     croppedImage = cameraCrop;
                 }
@@ -829,7 +843,7 @@
                 }
                 var result = await withTimeout(worker.recognize(imageFile), options.camera ? 15000 : 45000, 'Passport OCR timed out. Try a smaller or clearer image.');
                 if (activeUi !== ui) return null;
-                var fullDetails = parseMrzDetails(findMrzLines(result.data.text || ''), ui);
+                var fullDetails = findBestMrzDetails(result.data.text || '', ui);
                 if (isBetterMrzCandidate(fullDetails, best)) best = fullDetails;
                 if (options.camera) return readNameLine(croppedImage, best);
                 if (hasUsablePassportDetails(best) && !best.nameLooksReadable && window.createImageBitmap) {
@@ -846,13 +860,13 @@
                     croppedImage = await prepareMrzCrop(imageFile);
                     result = await withTimeout(worker.recognize(croppedImage), 45000, 'Passport OCR timed out. Try a smaller or clearer image.');
                     if (activeUi !== ui) return null;
-                    var croppedDetails = parseMrzDetails(findMrzLines(result.data.text || ''), ui);
+                    var croppedDetails = findBestMrzDetails(result.data.text || '', ui);
                     if (isBetterMrzCandidate(croppedDetails, best)) best = croppedDetails;
                     if ((!best || !best.passportValid) && worker.setParameters) {
                         await worker.setParameters({ tessedit_pageseg_mode: 11 });
                         result = await withTimeout(worker.recognize(croppedImage), 45000, 'Passport OCR timed out. Try a smaller or clearer image.');
                         if (activeUi !== ui) return null;
-                        var sparseDetails = parseMrzDetails(findMrzLines(result.data.text || ''), ui);
+                        var sparseDetails = findBestMrzDetails(result.data.text || '', ui);
                         if (isBetterMrzCandidate(sparseDetails, best)) best = sparseDetails;
                     }
                 }
@@ -873,7 +887,7 @@
             if (options.onCandidate) options.onCandidate(details);
             if (!hasUsablePassportDetails(details)) {
                 if (options.autoCapture) return false;
-                logScanResults(passportValues(details, ui), ui);
+                logScanResults(passportValues(details, ui), ui, details, false);
                 throw new Error('Could not verify enough passport details. No fields were changed. Try a closer image or enter the details manually.');
             }
             if (options.previewOnly) return details;

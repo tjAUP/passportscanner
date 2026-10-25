@@ -76,12 +76,17 @@ const document = {
 };
 const mrz = 'P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<\n'
     + 'L898902C36UTO7408122F1204159ZE184226B<<<<<10';
+const misleadingMrz = mrz.replace('L898902C36', 'X000000001')
+    .replace('7408122', '7408123').replace('1204159', '1204158');
 let recognizedText = mrz;
 let recognizedQueue = [];
 let availabilityRequests = 0;
 const loggedResults = [];
 const window = {
-    console: { log(value) { loggedResults.push(value); } },
+    console: { log(label, value) {
+        assert.equal(label, 'PassportScanner scan results');
+        loggedResults.push(value);
+    } },
     Tesseract: {
         async createWorker() {
             return {
@@ -146,6 +151,14 @@ vm.runInNewContext(script, context);
     assert.equal(result.complete, true);
     assert.equal('image' in result, false);
     assert.equal(loggedResults.length, 0, 'console logging is off by default');
+
+    result = undefined;
+    recognizedText = misleadingMrz + '\n' + mrz;
+    scanInput.files = [{ type: 'image/jpeg', name: 'multiple-mrz-candidates.jpg' }];
+    scanInput.listeners.change.call(scanInput);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(result.fields.passportNo, 'L898902C3');
+    assert.equal(result.verifiedCount, 3, 'the best OCR candidate should be used');
 
     result = undefined;
     recognizedText = mrz.replace('L898902C36', 'L898902C37');
@@ -242,6 +255,7 @@ vm.runInNewContext(script, context);
     assert.equal(loggedResults[0][0].passportNo, null);
     assert.equal(loggedResults[0][0].expiry, '2012-04-15');
     assert.equal(loggedResults[0][0].firstName, 'ANNA MARIA');
+    assert.equal(loggedResults[0][0].accepted, true);
     assert.equal('passportImg' in loggedResults[0][0], false);
 
     recognizedText = 'not a passport';
@@ -252,6 +266,16 @@ vm.runInNewContext(script, context);
     assert.equal(loggedResults[1][0].passportNo, null);
     assert.equal(loggedResults[1][0].expiry, null);
     assert.equal(loggedResults[1][0].name, null);
+    assert.equal(loggedResults[1][0].accepted, false);
+
+    recognizedText = misleadingMrz;
+    loggedScanInput.files = [{ type: 'image/jpeg', name: 'misleading-passport.jpg' }];
+    loggedScanInput.listeners.change.call(loggedScanInput);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(loggedResults.length, 3);
+    assert.equal(loggedResults[2][0].passportNo, null, 'rejected scans must not expose a candidate number as accepted');
+    assert.equal(loggedResults[2][0].verifiedCount, 1);
+    assert.equal(loggedResults[2][0].checks.passport, true);
 
     console.log('MRZ scan filled fields, matched PHP date formats, and emitted a verified result');
 })().catch(error => { console.error(error); process.exitCode = 1; });
