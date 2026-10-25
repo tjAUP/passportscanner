@@ -118,6 +118,13 @@
         config.dateFormat = config.dateFormat || 'Y-m-d';
         config.countryNames = config.countryNames || {};
         config.fields = config.fields || {};
+        var holdSeconds = Number(config.autoCaptureHoldSeconds);
+        if (config.autoCaptureHoldSeconds == null || config.autoCaptureHoldSeconds === '' || !Number.isFinite(holdSeconds)) holdSeconds = 3;
+        config.autoCaptureHoldSeconds = Math.max(0, Math.min(30, holdSeconds));
+        var captureCount = Number(config.autoCaptureCount);
+        config.autoCaptureCount = config.autoCaptureCount == null || config.autoCaptureCount === '' || !Number.isFinite(captureCount)
+            ? Math.min(10, Math.max(1, Math.ceil(config.autoCaptureHoldSeconds) + 1))
+            : Math.max(1, Math.min(10, Math.round(captureCount)));
         config.element = element;
         config.cameraOpen = '#' + id + '-camera-open';
         config.chooseButton = '#' + id + '-choose';
@@ -904,19 +911,28 @@
                 if (found && activeUi === ui && activeVideo === video && sequence === cameraSequence) {
                     var best = { sample: initialSample, details: found };
                     var heldSamples = [];
+                    var heldCount = ui.autoCaptureCount - 1;
+                    var holdMs = ui.autoCaptureHoldSeconds * 1000;
+                    var holdStart = Date.now();
                     setCameraGuideState(ui, 'steady');
-                    setStatus('MRZ detected. Hold steady for 3 seconds.', ui);
-                    for (var i = 1; i <= 3; i++) {
-                        await new Promise(function(resolve) { setTimeout(resolve, 1000); });
+                    setStatus(heldCount === 0 ? 'MRZ detected. Capturing now.'
+                        : holdMs === 0 ? 'MRZ detected. Capturing ' + ui.autoCaptureCount + ' frames.'
+                        : 'MRZ detected. Hold steady for ' + ui.autoCaptureHoldSeconds + ' seconds.', ui);
+                    for (var i = 1; i <= heldCount; i++) {
+                        var captureAt = holdStart + Math.round(holdMs * i / heldCount);
+                        await new Promise(function(resolve) { setTimeout(resolve, Math.max(0, captureAt - Date.now())); });
                         if (activeUi !== ui || activeVideo !== video || sequence !== cameraSequence) return;
                         var heldSample = await captureCameraSample(video, cropRegion);
                         if (heldSample) heldSamples.push(heldSample);
-                        if (i < 3) setStatus('Hold steady for ' + (3 - i) + ' more second' + (i === 2 ? '' : 's') + '.', ui);
+                        if (i < heldCount && holdMs > 0) {
+                            var remainingSeconds = Math.max(1, Math.ceil((holdStart + holdMs - Date.now()) / 1000));
+                            setStatus('Hold steady for ' + remainingSeconds + ' more second' + (remainingSeconds === 1 ? '' : 's') + '.', ui);
+                        }
                     }
                     if (!hasCompletePassportDetails(best.details)) {
                         setStatus('Comparing passport captures...', ui);
                         heldSamples.sort(function(a, b) { return b.sharpness - a.sharpness; });
-                        for (var j = 0; j < Math.min(2, heldSamples.length); j++) {
+                        for (var j = 0; j < heldSamples.length; j++) {
                             if (activeUi !== ui || activeVideo !== video || sequence !== cameraSequence) return;
                             try {
                                 worker = await getAutoScanWorker();
@@ -1159,10 +1175,14 @@
         config.fields = fields;
         config.resultTarget = isInput ? element : null;
         var dateFormat = element.getAttribute('data-date-format');
+        var autoCaptureCount = element.getAttribute('data-auto-capture-count');
+        var autoCaptureHoldSeconds = element.getAttribute('data-auto-capture-hold-seconds');
         var fieldRoot = element.getAttribute('data-field-root');
         var assetBaseUrl = element.getAttribute('data-asset-base-url');
         var countryNames = element.getAttribute('data-country-names');
         if (dateFormat) config.dateFormat = dateFormat;
+        if (autoCaptureCount) config.autoCaptureCount = autoCaptureCount;
+        if (autoCaptureHoldSeconds) config.autoCaptureHoldSeconds = autoCaptureHoldSeconds;
         if (fieldRoot) config.fieldRoot = fieldRoot;
         if (assetBaseUrl) config.assetBaseUrl = assetBaseUrl;
         if (countryNames) {

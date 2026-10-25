@@ -94,6 +94,7 @@ depend on it.
              data-field-optional-data=".traveler-optional-data"
              data-field-passport-img=".traveler-passport-image"
              data-date-format="Y-m-d"
+             data-auto-capture-count="1"
              data-country-names='{"MY":"Malaysia","SG":"Singapore","US":"United States"}'>
     <label>Date of birth <input type="date" name="travelers[0][dob]" class="traveler-dob"></label>
     <label>Expiry date <input type="date" name="travelers[0][expiry]" class="traveler-expiry"></label>
@@ -161,7 +162,8 @@ field named `passportNo` for the scanner input. Map other fields with
 `data-field-document-code`, `data-field-issuing-country-code`,
 `data-field-nationality-code`, `data-field-sex`, `data-field-optional-data`,
 and `data-field-passport-img`.
-Optional attributes are `data-date-format`, `data-country-names` (JSON), and
+Optional attributes are `data-date-format`, `data-country-names` (JSON),
+`data-auto-capture-count`, `data-auto-capture-hold-seconds`, and
 `data-asset-base-url`.
 
 ## Use the JavaScript API
@@ -209,6 +211,7 @@ PassportScanner.init({
     },
     dateFormat: 'Y-m-d',
     countryNames: { MY: 'Malaysia' },
+    autoCaptureHoldSeconds: 2,
     assetBaseUrl: '/assets/passportscanner/'
 });
 </script>
@@ -232,7 +235,18 @@ time, while image uploads remain independent.
 | `fieldRoot` | Ancestor selector or element used to scope field selectors |
 | `dateFormat` | PHP `date_format()` style for `dob` and `expiry`; default `Y-m-d` |
 | `countryNames` | Map country codes such as `MY` to form option values |
+| `autoCaptureCount` | Total automatic camera frames, including the first readable frame; integer 1–10 |
+| `autoCaptureHoldSeconds` | Time over which automatic camera frames are collected; 0–30 seconds |
 | `assetBaseUrl` | URL of the published `dist/` directory; inferred from a script tag |
+
+By default, auto capture takes 4 frames over 3 seconds. Set
+`autoCaptureCount: 1` to capture immediately after the first readable MRZ
+frame. When only `autoCaptureHoldSeconds` is set, the scanner takes roughly one
+additional frame per second, up to 10 total. When both are set, it spreads the
+chosen count evenly across the hold time. The scanner rounds and limits an
+out-of-range count to 1–10 and limits hold time to 0–30 seconds. These options
+apply to automatic camera capture; the manual **Capture & scan** button takes
+one frame, and uploaded images are scanned once.
 
 `passport` is filled only when its MRZ check passes. `dob` and `expiry` also
 require valid MRZ checks. `passportImg` must be a file input if you want to
