@@ -98,6 +98,9 @@ scanner does not depend on it.
              data-field-passport-img=".traveler-passport-image"
              data-date-format="Y-m-d"
              data-auto-capture-count="1"
+             data-auto-capture-hold-seconds="0"
+             data-log-results="false"
+             data-asset-base-url="/assets/passportscanner/"
              data-country-names='{"MY":"Malaysia","SG":"Singapore","US":"United States"}'>
     <label>Date of birth <input type="date" name="travelers[0][dob]" class="traveler-dob"></label>
     <label>Expiry date <input type="date" name="travelers[0][expiry]" class="traveler-expiry"></label>
@@ -177,6 +180,7 @@ Load the published script, then call `PassportScanner.init(config)` for each
 scanner container. CSS selectors or DOM elements can be used for fields.
 
 ```html
+<div class="traveler-row">
 <input id="name" name="name">
 <input id="first-name" name="firstName">
 <input id="last-name" name="lastName">
@@ -193,10 +197,12 @@ scanner container. CSS selectors or DOM elements can be used for fields.
 <input id="optional-data" name="optionalData">
 <input id="passport-image" name="passportImg" type="file">
 <div id="scanner"></div>
+</div>
 <script src="/assets/passportscanner/passport-scanner.js"></script>
 <script>
 PassportScanner.init({
     container: '#scanner',
+    fieldRoot: '.traveler-row',
     fields: {
         name: '#name',
         firstName: '#first-name',
@@ -216,8 +222,10 @@ PassportScanner.init({
     },
     dateFormat: 'Y-m-d',
     countryNames: { MY: 'Malaysia' },
+    autoCaptureCount: 3,
     autoCaptureHoldSeconds: 2,
-    assetBaseUrl: '/assets/passportscanner/'
+    assetBaseUrl: '/assets/passportscanner/',
+    logResults: false
 });
 </script>
 ```
