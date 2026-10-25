@@ -35,6 +35,7 @@ const passport = element({
     'data-availability-url': '/old-availability-endpoint'
 });
 passport.tagName = 'INPUT';
+const passportNumber = element();
 const firstName = element();
 const documentCode = element();
 const issuingCountryCode = element();
@@ -61,7 +62,8 @@ const document = {
     },
     querySelector(selector) {
         if (selector === 'input.js-tjaup-passportscanner-input') return passport;
-        if (selector === '#passport') return passport;
+        if (selector === '#passport') return passportNumber;
+        if (selector === '#scanner-self') return passport;
         if (selector === '#first-name') return firstName;
         if (selector === '#document-code') return documentCode;
         if (selector === '#issuing-country-code') return issuingCountryCode;
@@ -103,7 +105,7 @@ vm.runInNewContext(script, context);
 (async () => {
     let result;
     let passportInputEvents = 0;
-    passport.addEventListener('input', () => { passportInputEvents++; });
+    passportNumber.addEventListener('input', () => { passportInputEvents++; });
     passport.addEventListener('passportscanner:result', event => { result = event.detail; });
     listeners.DOMContentLoaded();
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -118,7 +120,8 @@ vm.runInNewContext(script, context);
     scanInput.listeners.change.call(scanInput);
     await new Promise(resolve => setTimeout(resolve, 0));
 
-    assert.equal(passport.value, 'L898902C3');
+    assert.equal(passport.value, '');
+    assert.equal(passportNumber.value, 'L898902C3');
     assert.equal(passportInputEvents, 1);
     assert.equal(firstName.value, 'ANNA MARIA');
     assert.equal(documentCode.value, 'P');
@@ -150,7 +153,7 @@ vm.runInNewContext(script, context);
     assert.equal(result.checks.passport, false);
     assert.equal('passport' in result.fields, false);
     assert.equal('passportNo' in result.fields, false);
-    assert.equal(passport.value, 'L898902C3');
+    assert.equal(passportNumber.value, 'L898902C3');
 
     result = undefined;
     recognizedQueue = [mrz.replace('L898902C36', 'L898902C37'), mrz];
@@ -180,7 +183,7 @@ vm.runInNewContext(script, context);
     scanInput.listeners.change.call(scanInput);
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(result, undefined);
-    assert.equal(passport.value, 'L898902C3');
+    assert.equal(passportNumber.value, 'L898902C3');
 
     recognizedText = mrz;
     const formats = [
@@ -214,6 +217,14 @@ vm.runInNewContext(script, context);
     defaultScanInput.listeners.change.call(defaultScanInput);
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(dob.value, '1974-08-12');
+
+    passport.attributes['data-field-passport-no'] = '#scanner-self';
+    await window.PassportScanner.initFromElement(passport);
+    const selfMappedScanInput = controls[`#passport-scanner-${formats.length + 3}-file`];
+    selfMappedScanInput.files = [{ type: 'image/jpeg', name: 'passport.jpg' }];
+    selfMappedScanInput.listeners.change.call(selfMappedScanInput);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(passport.value, '', 'scanner input must never become the passport number field');
 
     console.log('MRZ scan filled fields, matched PHP date formats, and emitted a verified result');
 })().catch(error => { console.error(error); process.exitCode = 1; });

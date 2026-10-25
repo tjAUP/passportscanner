@@ -36,18 +36,21 @@ function element(attributes = {}) {
 
 function addTraveler(plainHtml = false) {
     const firstName = element();
+    const passportNumber = element();
     const container = element({ 'data-tjaup-passportscanner-container': '1' });
     container.isContainer = true;
     container.closest = selector => selector === '.traveler-row' ? {
-        querySelector: field => field === '.first-name' ? firstName : null
+        querySelector: field => field === '.first-name' ? firstName :
+            field === '.passport-no' ? passportNumber : null
     } : null;
     const passport = element(plainHtml ? {
         'data-field-first-name': '.first-name',
+        'data-field-passport-no': '.passport-no',
         'data-field-root': '.traveler-row',
         'data-asset-base-url': 'https://example.test/assets/passportscanner/'
     } : {
         'data-tjaup-passportscanner': JSON.stringify({
-            fields: { firstName: '.first-name' },
+            fields: { firstName: '.first-name', passportNo: '.passport-no' },
             fieldRoot: '.traveler-row',
             dateFormat: 'Y-m-d',
             assetBaseUrl: 'https://example.test/assets/passportscanner/'
@@ -57,7 +60,7 @@ function addTraveler(plainHtml = false) {
     passport.tagName = 'INPUT';
     passport.nextElementSibling = container;
     connected.add(container);
-    const traveler = { passport, firstName, container };
+    const traveler = { passport, passportNumber, firstName, container };
     travelers.push(traveler);
     return traveler;
 }
@@ -122,18 +125,19 @@ async function scan(instanceNumber) {
     listeners.DOMContentLoaded();
     assert.equal(typeof mutationCallback, 'function');
     await scan(1);
-    assert.equal(first.passport.value, 'L898902C3');
+    assert.equal(first.passport.value, '');
+    assert.equal(first.passportNumber.value, 'L898902C3');
     assert.equal(first.firstName.value, 'ANNA MARIA');
-    assert.equal(second.passport.value, '');
+    assert.equal(second.passportNumber.value, '');
 
     await scan(2);
-    assert.equal(second.passport.value, 'L898902C3');
+    assert.equal(second.passportNumber.value, 'L898902C3');
     assert.equal(second.firstName.value, 'ANNA MARIA');
 
     const third = addTraveler();
     mutationCallback();
     await scan(3);
-    assert.equal(third.passport.value, 'L898902C3');
+    assert.equal(third.passportNumber.value, 'L898902C3');
     assert.equal(third.firstName.value, 'ANNA MARIA');
 
     const fourth = addTraveler(true);
@@ -144,23 +148,25 @@ async function scan(instanceNumber) {
     fifth.passport.addEventListener('passportscanner:result', event => fifthResults.push(event.detail));
     mutationCallback();
     await scan(4);
+    assert.equal(fourth.passportNumber.value, 'L898902C3');
     assert.equal(fourth.firstName.value, 'ANNA MARIA');
     assert.equal(fifth.firstName.value, '');
     assert.equal(fourthResults[0].fields.passport, 'L898902C3');
     assert.equal(fifthResults.length, 0);
     await scan(5);
+    assert.equal(fifth.passportNumber.value, 'L898902C3');
     assert.equal(fifth.firstName.value, 'ANNA MARIA');
     assert.equal(fifthResults[0].fields.passport, 'L898902C3');
 
     connected.delete(second.container);
     mutationCallback();
     window.PassportScanner.stop(first.passport);
-    first.passport.value = '';
+    first.passportNumber.value = '';
     await scan(1);
-    assert.equal(first.passport.value, '');
-    third.passport.value = '';
+    assert.equal(first.passportNumber.value, '');
+    third.passportNumber.value = '';
     await scan(3);
-    assert.equal(third.passport.value, 'L898902C3');
+    assert.equal(third.passportNumber.value, 'L898902C3');
 
     await window.PassportScanner.initFromElement(first.passport);
     await controls['#passport-scanner-6-camera-open'].listeners.click();

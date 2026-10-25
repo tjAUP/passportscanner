@@ -54,9 +54,11 @@ file as binary without an HTTP `Content-Encoding` header.
 ## Use an input class
 
 The script automatically adds scanner controls after inputs with the
-`js-tjaup-passportscanner-input` class. PHP can render these inputs as ordinary
-HTML. jQuery is optional; it can listen for results but the scanner does not
-depend on it.
+`js-tjaup-passportscanner-input` class. Use a separate scanner input and map
+the real passport number field explicitly. The scanner input can be hidden and
+disabled because it is only an anchor for the controls. PHP can render these
+inputs as ordinary HTML. jQuery is optional; it can listen for results but the
+scanner does not depend on it.
 
 ```html
 <form method="post" enctype="multipart/form-data">
@@ -75,10 +77,11 @@ depend on it.
       </select>
     </label>
     <label for="traveler-0-passport">Passport number</label>
-    <input id="traveler-0-passport" name="travelers[0][passportNo]"
-             class="js-tjaup-passportscanner-input"
+    <input id="traveler-0-passport" name="travelers[0][passportNo]" class="traveler-passport-no">
+    <input type="hidden" name="travelers[0][passport_scan]"
+             class="js-tjaup-passportscanner-input" disabled
              data-field-root=".traveler-row"
-             data-field-passport-no=".js-tjaup-passportscanner-input"
+             data-field-passport-no=".traveler-passport-no"
              data-field-name=".traveler-name"
              data-field-first-name=".traveler-first-name"
              data-field-last-name=".traveler-last-name"
@@ -118,9 +121,10 @@ depend on it.
 <script src="/assets/passportscanner/passport-scanner.js" defer></script>
 ```
 
-The scanner input above is the `passportNo` form field; the scanner fills it
-automatically and returns the same number in both `fields.passport` and
-`fields.passportNo`. The nationality dropdown only accepts the country names
+The scanner input is separate from the `passportNo` form field and is never
+filled with the passport number. The mapped `passportNo` field receives a
+verified number. The result also contains the same number in both
+`fields.passport` and `fields.passportNo`. The nationality dropdown only accepts the country names
 listed in `data-country-names`. The three-letter `nationalityCode` is returned
 even when a dropdown has no matching country option. The optional data is
 issuer-defined and can be empty.
@@ -134,12 +138,12 @@ details into the form.
 the `.traveler-row` markup with a new form index for more travelers; each scan
 then fills only its own row. New inputs added after page load initialize
 automatically. Removing a row releases its scanner. If a row is hidden but
-kept in the page, call `PassportScanner.stop(passportInput)` when hiding it and
-`PassportScanner.initFromElement(passportInput)` when showing it again.
+kept in the page, call `PassportScanner.stop(scannerInput)` when hiding it and
+`PassportScanner.initFromElement(scannerInput)` when showing it again.
 
 ### Optional result event
 
-After a usable scan, the passport input also emits a bubbling
+After a usable scan, the scanner input also emits a bubbling
 `passportscanner:result` event. Its `detail.fields` contains the accepted
 values. Listen only if your application needs an extra reaction after the
 inputs are filled. For example, jQuery can read the result:
@@ -153,12 +157,12 @@ $(document).on('passportscanner:result', '.js-tjaup-passportscanner-input', func
 });
 ```
 
-The input itself is mapped to `passport`, the verified passport number. The
-same number is also available as `result.fields.passportNo`; you can use a
-field named `passportNo` for the scanner input. Map other fields with
+The scanner input is never mapped to the passport number automatically. Map
+the separate passport number field with `data-field-passport-no` or
+`data-field-passport`. Map other fields with
 `data-field-name`, `data-field-first-name`, `data-field-last-name`,
 `data-field-title`, `data-field-gender`, `data-field-dob`,
-`data-field-expiry`, `data-field-nationality`, `data-field-passport-no`,
+`data-field-expiry`, `data-field-nationality`,
 `data-field-document-code`, `data-field-issuing-country-code`,
 `data-field-nationality-code`, `data-field-sex`, `data-field-optional-data`,
 and `data-field-passport-img`.
@@ -198,7 +202,7 @@ PassportScanner.init({
         lastName: '#last-name',
         title: '#title',
         gender: '#gender',
-        passport: '#passport',
+        passportNo: '#passport',
         dob: '#dob',
         expiry: '#expiry',
         nationality: '#nationality',
@@ -217,9 +221,9 @@ PassportScanner.init({
 </script>
 ```
 
-The `passport` mapping fills the input even when its HTML `name` is
-`passportNo`. To fill a second copy of the number, also map
-`passportNo: '#another-passport-number-input'` in `fields`.
+The `passportNo` mapping fills the passport number input; the scanner container
+is separate. The `passport` key is an alias for the same verified number if
+your application uses that field name.
 
 Use `fieldRoot: '.traveler-row'` when multiple instances have repeated field
 selectors. `PassportScanner.stop(container)` stops one scanner;

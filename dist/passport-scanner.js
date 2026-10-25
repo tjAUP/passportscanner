@@ -657,6 +657,7 @@
         var filledValues = new Map();
         Object.keys(values).forEach(function(key) {
             var field = ui.fields[key] && findElement(ui.fields[key]);
+            if ((key === 'passport' || key === 'passportNo') && field === ui.resultTarget) return;
             if (!field || filledValues.get(field) === values[key]) return;
             fillField(field, values[key]);
             filledValues.set(field, values[key]);
@@ -1014,7 +1015,7 @@
             var root = typeof config.fieldRoot === 'string' ?
                 (container.closest ? container.closest(config.fieldRoot) : null) : findElement(config.fieldRoot);
             Object.keys(config.fields || {}).forEach(function(key) {
-                if (key !== 'passport' && typeof config.fields[key] === 'string') {
+                if (typeof config.fields[key] === 'string') {
                     config.fields[key] = root && root.querySelector(config.fields[key]);
                 }
             });
@@ -1163,7 +1164,6 @@
         });
         var container = element;
         if (isInput) {
-            fields.passport = element;
             container = element._passportScannerContainer;
             if (!container || !document.documentElement.contains(container)) {
                 var next = element.nextElementSibling;
