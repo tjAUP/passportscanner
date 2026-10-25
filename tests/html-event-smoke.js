@@ -24,7 +24,7 @@ const element = (attributes = {}) => ({
 
 const passport = element({
     'data-field-first-name': '#first-name',
-    'data-field-passport-no': '#passport-no',
+    'data-field-passport-no': '#passport',
     'data-field-document-code': '#document-code',
     'data-field-issuing-country-code': '#issuing-country-code',
     'data-field-nationality-code': '#nationality-code',
@@ -36,7 +36,6 @@ const passport = element({
 });
 passport.tagName = 'INPUT';
 const firstName = element();
-const passportNo = element();
 const documentCode = element();
 const issuingCountryCode = element();
 const nationalityCode = element();
@@ -58,7 +57,6 @@ const document = {
         if (selector === 'input.js-tjaup-passportscanner-input') return passport;
         if (selector === '#passport') return passport;
         if (selector === '#first-name') return firstName;
-        if (selector === '#passport-no') return passportNo;
         if (selector === '#document-code') return documentCode;
         if (selector === '#issuing-country-code') return issuingCountryCode;
         if (selector === '#nationality-code') return nationalityCode;
@@ -94,6 +92,8 @@ vm.runInNewContext(script, context);
 
 (async () => {
     let result;
+    let passportInputEvents = 0;
+    passport.addEventListener('input', () => { passportInputEvents++; });
     passport.addEventListener('passportscanner:result', event => { result = event.detail; });
     listeners.DOMContentLoaded();
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -109,7 +109,7 @@ vm.runInNewContext(script, context);
     await new Promise(resolve => setTimeout(resolve, 0));
 
     assert.equal(passport.value, 'L898902C3');
-    assert.equal(passportNo.value, 'L898902C3');
+    assert.equal(passportInputEvents, 1);
     assert.equal(firstName.value, 'ANNA MARIA');
     assert.equal(documentCode.value, 'P');
     assert.equal(issuingCountryCode.value, 'UTO');

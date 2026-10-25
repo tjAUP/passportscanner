@@ -634,7 +634,13 @@
         var countryName = countryCode && ui.countryNames[countryCode];
         if (countryName) values.nationality = countryName;
 
-        Object.keys(values).forEach(function(key) { fillField(ui.fields[key], values[key]); });
+        var filledValues = new Map();
+        Object.keys(values).forEach(function(key) {
+            var field = ui.fields[key] && findElement(ui.fields[key]);
+            if (!field || filledValues.get(field) === values[key]) return;
+            fillField(field, values[key]);
+            filledValues.set(field, values[key]);
+        });
 
         setStatus(hasCompletePassportDetails(details)
             ? 'Passport details filled. Please verify each field before saving.'

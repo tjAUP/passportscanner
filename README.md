@@ -78,6 +78,7 @@ depend on it.
     <input id="traveler-0-passport" name="travelers[0][passportNo]"
              class="js-tjaup-passportscanner-input"
              data-field-root=".traveler-row"
+             data-field-passport-no=".js-tjaup-passportscanner-input"
              data-field-name=".traveler-name"
              data-field-first-name=".traveler-first-name"
              data-field-last-name=".traveler-last-name"
@@ -110,23 +111,10 @@ depend on it.
     <label>MRZ sex marker <input name="travelers[0][sex]" class="traveler-sex"></label>
     <label>Issuer optional data <input name="travelers[0][optionalData]" class="traveler-optional-data"></label>
     <label>Passport image <input type="file" name="travelers[0][passportImg]" class="traveler-passport-image" accept="image/jpeg,image/png,image/webp"></label>
-    <output class="scan-review" aria-live="polite"></output>
   </div>
   <button type="submit">Save after checking the passport</button>
 </form>
 <script src="/assets/passportscanner/passport-scanner.js" defer></script>
-<script>
-document.addEventListener('passportscanner:result', function (event) {
-    const row = event.target.closest('.traveler-row');
-    if (!row) return;
-    const { fields, checks, complete } = event.detail;
-    // All readable MRZ values are in fields; the passport number is fields.passportNo.
-    row.querySelector('.scan-review').textContent =
-        fields.passportNo && checks.passport && complete
-            ? 'Scan complete. Check every field against the passport before saving.'
-            : 'Some details could not be verified. Check and complete the form manually.';
-});
-</script>
 ```
 
 The scanner input above is the `passportNo` form field; the scanner fills it
@@ -137,6 +125,10 @@ even when a dropdown has no matching country option. The optional data is
 issuer-defined and can be empty.
 Add your application's form action and CSRF protection before saving.
 
+The script fills all mapped inputs directly after a usable scan. No result
+handler or jQuery code is needed to copy the passport number, dates, or other
+details into the form.
+
 `data-field-root` scopes selectors to the nearest matching ancestor. Repeat
 the `.traveler-row` markup with a new form index for more travelers; each scan
 then fills only its own row. New inputs added after page load initialize
@@ -144,10 +136,12 @@ automatically. Removing a row releases its scanner. If a row is hidden but
 kept in the page, call `PassportScanner.stop(passportInput)` when hiding it and
 `PassportScanner.initFromElement(passportInput)` when showing it again.
 
-After a usable scan, the passport input emits a bubbling
+### Optional result event
+
+After a usable scan, the passport input also emits a bubbling
 `passportscanner:result` event. Its `detail.fields` contains the accepted
-values. The complete example above uses plain JavaScript; jQuery can listen
-instead:
+values. Listen only if your application needs an extra reaction after the
+inputs are filled. For example, jQuery can read the result:
 
 ```js
 $(document).on('passportscanner:result', '.js-tjaup-passportscanner-input', function (event) {
@@ -192,7 +186,6 @@ scanner container. CSS selectors or DOM elements can be used for fields.
 <input id="optional-data" name="optionalData">
 <input id="passport-image" name="passportImg" type="file">
 <div id="scanner"></div>
-<output id="scan-result" aria-live="polite"></output>
 <script src="/assets/passportscanner/passport-scanner.js"></script>
 <script>
 PassportScanner.init({
@@ -217,13 +210,6 @@ PassportScanner.init({
     dateFormat: 'Y-m-d',
     countryNames: { MY: 'Malaysia' },
     assetBaseUrl: '/assets/passportscanner/'
-});
-document.querySelector('#scanner').addEventListener('passportscanner:result', function (event) {
-    const { fields, checks, verifiedCount, complete } = event.detail;
-    document.querySelector('#scan-result').textContent =
-        `Verified ${verifiedCount}/3 checked fields. ` +
-        (checks.passport && fields.passportNo ? 'Passport number read. ' : 'Check the passport number. ') +
-        (complete ? 'Review all values before saving.' : 'Fill missing values manually.');
 });
 </script>
 ```
