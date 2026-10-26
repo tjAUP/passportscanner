@@ -133,7 +133,9 @@ async function runCase(settings, expectedCaptures, useAttributes = false, recogn
     const detail = await result;
     assert.equal(detail.fields.passportNo, 'L898902C3');
     assert.equal(loggedResults.length, settings.logResults ? 1 : 0);
-    if (settings.logResults) assert.equal(loggedResults[0][0].passportNo, 'L898902C3');
+    if (settings.logResults) {
+        assert.equal(loggedResults[0].find(row => row.field === 'passportNo').value, 'L898902C3');
+    }
     if (expectRecoveredName) assert.equal(detail.fields.firstName, 'ANNA MARIA');
     assert.equal(captures.length - (useBitmap ? 1 : 0), expectedCaptures);
     window.PassportScanner.stop();

@@ -1,6 +1,6 @@
 {
     "name": "@tjaup/passportscanner",
-    "version": "2.1.4",
+    "version": "2.1.5",
     "description": "Framework-independent browser passport MRZ scanner",
     "license": "UNLICENSED",
     "private": false,

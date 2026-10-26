@@ -91,6 +91,7 @@ let recognizedText = mrz;
 let recognizedQueue = [];
 let availabilityRequests = 0;
 const loggedResults = [];
+const loggedValue = (scanIndex, field) => loggedResults[scanIndex].find(row => row.field === field).value;
 const window = {
     console: { log(label, value) {
         assert.equal(label, 'PassportScanner scan results');
@@ -279,34 +280,38 @@ vm.runInNewContext(script, context);
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(loggedResults.length, 1);
     assert.equal(Array.isArray(loggedResults[0]), true);
-    assert.equal(loggedResults[0].length, 1);
-    assert.equal(loggedResults[0][0].passportNo, null);
-    assert.equal(loggedResults[0][0].mrz.includes('L898902C37'), true);
-    assert.equal(loggedResults[0][0].expiry, '2012-04-15');
-    assert.equal(loggedResults[0][0].firstName, 'ANNA MARIA');
-    assert.equal(loggedResults[0][0].accepted, true);
-    assert.equal('passportImg' in loggedResults[0][0], false);
+    assert.deepEqual(Array.from(loggedResults[0], row => row.field), [
+        'accepted', 'verifiedCount', 'checks', 'mrz', 'passportNo', 'passport',
+        'name', 'firstName', 'lastName', 'dob', 'expiry', 'sex', 'gender', 'title',
+        'nationality', 'nationalityCode', 'documentCode', 'issuingCountryCode', 'optionalData'
+    ]);
+    assert.equal(loggedValue(0, 'passportNo'), null);
+    assert.equal(loggedValue(0, 'mrz').includes('L898902C37'), true);
+    assert.equal(loggedValue(0, 'expiry'), '2012-04-15');
+    assert.equal(loggedValue(0, 'firstName'), 'ANNA MARIA');
+    assert.equal(loggedValue(0, 'accepted'), true);
+    assert.equal(loggedResults[0].some(row => row.field === 'passportImg'), false);
 
     recognizedText = 'not a passport';
     loggedScanInput.files = [{ type: 'image/jpeg', name: 'unreadable-passport.jpg' }];
     loggedScanInput.listeners.change.call(loggedScanInput);
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(loggedResults.length, 2);
-    assert.equal(loggedResults[1][0].passportNo, null);
-    assert.equal(loggedResults[1][0].mrz, null);
-    assert.equal(loggedResults[1][0].expiry, null);
-    assert.equal(loggedResults[1][0].name, null);
-    assert.equal(loggedResults[1][0].accepted, false);
+    assert.equal(loggedValue(1, 'passportNo'), null);
+    assert.equal(loggedValue(1, 'mrz'), null);
+    assert.equal(loggedValue(1, 'expiry'), null);
+    assert.equal(loggedValue(1, 'name'), null);
+    assert.equal(loggedValue(1, 'accepted'), false);
 
     recognizedText = misleadingMrz;
     loggedScanInput.files = [{ type: 'image/jpeg', name: 'misleading-passport.jpg' }];
     loggedScanInput.listeners.change.call(loggedScanInput);
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(loggedResults.length, 3);
-    assert.equal(loggedResults[2][0].passportNo, null, 'rejected scans must not expose a candidate number as accepted');
-    assert.equal(loggedResults[2][0].mrz.includes('X00000000'), true, 'debug logs include the unverified OCR candidate');
-    assert.equal(loggedResults[2][0].verifiedCount, 1);
-    assert.equal(loggedResults[2][0].checks.passport, true);
+    assert.equal(loggedValue(2, 'passportNo'), null, 'rejected scans must not expose a candidate number as accepted');
+    assert.equal(loggedValue(2, 'mrz').includes('X00000000'), true, 'debug logs include the unverified OCR candidate');
+    assert.equal(loggedValue(2, 'verifiedCount'), 1);
+    assert.equal(loggedValue(2, 'checks').passport, true);
 
     console.log('MRZ scan filled fields, matched PHP date formats, and emitted a verified result');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -697,18 +697,19 @@
 
     function logScanResults(values, ui, details, accepted) {
         if (!ui.logResults || !window.console || typeof window.console.log !== 'function') return;
-        var keys = ['mrz', 'name', 'firstName', 'lastName', 'title', 'gender', 'passport', 'passportNo',
-            'dob', 'expiry', 'nationality', 'nationalityCode', 'documentCode',
-            'issuingCountryCode', 'sex', 'optionalData'];
-        var result = {};
-        keys.forEach(function(key) {
-            result[key] = accepted && Object.prototype.hasOwnProperty.call(values, key) ? values[key] : null;
+        var keys = ['accepted', 'verifiedCount', 'checks', 'mrz', 'passportNo', 'passport',
+            'name', 'firstName', 'lastName', 'dob', 'expiry', 'sex', 'gender', 'title',
+            'nationality', 'nationalityCode', 'documentCode', 'issuingCountryCode', 'optionalData'];
+        var rows = keys.map(function(key) {
+            var value = null;
+            if (key === 'accepted') value = accepted;
+            else if (key === 'verifiedCount') value = details ? details.verifiedCount : 0;
+            else if (key === 'checks') value = details ? details.checks : null;
+            else if (key === 'mrz') value = details && details.mrz ? details.mrz : null;
+            else if (accepted && Object.prototype.hasOwnProperty.call(values, key)) value = values[key];
+            return { field: key, value: value };
         });
-        result.mrz = details && details.mrz ? details.mrz : null;
-        result.accepted = accepted;
-        result.verifiedCount = details ? details.verifiedCount : 0;
-        result.checks = details ? details.checks : null;
-        try { window.console.log('PassportScanner scan results', [result]); }
+        try { window.console.log('PassportScanner scan results', rows); }
         catch (error) { /* Console logging must not interrupt form filling. */ }
     }
 

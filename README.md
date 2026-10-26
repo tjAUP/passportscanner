@@ -288,12 +288,26 @@ the form.
 Set `logResults: true` in `PassportScanner.init(config)` to inspect scans in
 the browser console. For class-based inputs, set `data-log-results="true"` on
 the scanner input. A log labeled `PassportScanner scan results` contains an
-array with one object for each scan. It includes every supported MRZ value;
-unread or unverified values are `null`, for example
-`[{ passportNo: null, dob: '1974-08-12', expiry: null, mrz: '...', ... }]`. The key for
-passport expiry is `expiry`, even if your form input is named `passportExp`.
+ordered array of `{ field, value }` rows for that scan. It begins with
+`accepted`, `verifiedCount`, `checks`, and `mrz`, followed by passport number,
+name, dates, sex, nationality, and document details. Every supported value
+appears, including unread or unverified fields as `null`, for example:
+
+```js
+[
+    { field: 'accepted', value: true },
+    { field: 'verifiedCount', value: 2 },
+    { field: 'checks', value: { passport: false, dob: true, expiry: true, /* ... */ } },
+    { field: 'mrz', value: 'P<...\n...' },
+    { field: 'passportNo', value: null },
+    // Other fields follow in the documented order.
+]
+```
+
+The key for passport expiry is `expiry`, even if your form input is named
+`passportExp`.
 When a scan fails verification, all field values are `null`; `accepted`,
-`verifiedCount`, and `checks` explain which checks passed. The `mrz` property
+`verifiedCount`, and `checks` explain which checks passed. The `mrz` row
 contains the selected, normalized OCR-read MRZ candidate even on a failed
 scan, or `null` if no candidate was found. It may contain incorrect or
 unverified characters. The image and full OCR text are never logged.
