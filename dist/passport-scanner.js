@@ -506,6 +506,8 @@
         if (!details || !line || details.nameLooksReadable) return details;
         var parsedName = parseMrzName(line);
         if (!isReadableMrzName(line, parsedName.fullName)) return details;
+        details.mrzLine1 = line;
+        details.mrz = [line, details.mrzLine2].filter(Boolean).join('\n');
         details.fullName = parsedName.fullName;
         details.givenNames = parsedName.givenNames;
         details.surname = parsedName.surname;
@@ -571,6 +573,9 @@
         var score = verifiedCount * 2 + (nameLooksReadable ? 1 : 0);
 
         return {
+            mrz: [first, second].filter(Boolean).join('\n'),
+            mrzLine1: first,
+            mrzLine2: second,
             fullName: fullName,
             givenNames: parsedName.givenNames,
             surname: parsedName.surname,
@@ -634,6 +639,8 @@
         candidate.fullName = current.fullName;
         candidate.givenNames = current.givenNames;
         candidate.surname = current.surname;
+        candidate.mrzLine1 = current.mrzLine1;
+        candidate.mrz = [candidate.mrzLine1, candidate.mrzLine2].filter(Boolean).join('\n');
         candidate.nameLooksReadable = true;
         candidate.score += 1;
         return candidate;
@@ -650,6 +657,7 @@
     function passportValues(details, ui) {
         var values = {};
         if (!details) return values;
+        if (details.mrz) values.mrz = details.mrz;
         if (details.nameLooksReadable) {
             values.name = details.fullName;
             values.firstName = details.givenNames;
@@ -680,13 +688,14 @@
 
     function logScanResults(values, ui, details, accepted) {
         if (!ui.logResults || !window.console || typeof window.console.log !== 'function') return;
-        var keys = ['name', 'firstName', 'lastName', 'title', 'gender', 'passport', 'passportNo',
+        var keys = ['mrz', 'name', 'firstName', 'lastName', 'title', 'gender', 'passport', 'passportNo',
             'dob', 'expiry', 'nationality', 'nationalityCode', 'documentCode',
             'issuingCountryCode', 'sex', 'optionalData'];
         var result = {};
         keys.forEach(function(key) {
             result[key] = accepted && Object.prototype.hasOwnProperty.call(values, key) ? values[key] : null;
         });
+        result.mrz = details && details.mrz ? details.mrz : null;
         result.accepted = accepted;
         result.verifiedCount = details ? details.verifiedCount : 0;
         result.checks = details ? details.checks : null;
@@ -1190,6 +1199,7 @@
         }
         var isInput = element.tagName === 'INPUT';
         var names = {
+            mrz: 'mrz',
             name: 'name',
             firstName: 'first-name',
             lastName: 'last-name',

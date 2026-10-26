@@ -29,6 +29,7 @@ const element = (attributes = {}) => ({
 });
 
 const passport = element({
+    'data-field-mrz': '#mrz',
     'data-field-first-name': '#first-name',
     'data-field-passport-no': '#passport',
     'data-field-document-code': '#document-code',
@@ -42,6 +43,7 @@ const passport = element({
 });
 passport.tagName = 'INPUT';
 const passportNumber = element();
+const mrzField = element();
 const firstName = element();
 const documentCode = element();
 const issuingCountryCode = element();
@@ -69,6 +71,7 @@ const document = {
     querySelector(selector) {
         if (selector === 'input.js-tjaup-passportscanner-input') return passport;
         if (selector === '#passport') return passportNumber;
+        if (selector === '#mrz') return mrzField;
         if (selector === '#scanner-self') return passport;
         if (selector === '#first-name') return firstName;
         if (selector === '#document-code') return documentCode;
@@ -138,6 +141,7 @@ vm.runInNewContext(script, context);
     assert.equal(scanStatus.classList.contains('is-success'), true);
 
     assert.equal(passport.value, '');
+    assert.equal(mrzField.value, mrz);
     assert.equal(passportNumber.value, 'L898902C3');
     assert.equal(passportInputEvents, 1);
     assert.equal(firstName.value, 'ANNA MARIA');
@@ -149,6 +153,7 @@ vm.runInNewContext(script, context);
     assert.equal(expiry.value, '2012/04/15');
     assert.equal(result.fields.passport, 'L898902C3');
     assert.equal(result.fields.passportNo, 'L898902C3');
+    assert.equal(result.fields.mrz, mrz);
     assert.equal(result.fields.documentCode, 'P');
     assert.equal(result.fields.issuingCountryCode, 'UTO');
     assert.equal(result.fields.nationalityCode, 'UTO');
@@ -265,6 +270,7 @@ vm.runInNewContext(script, context);
     assert.equal(Array.isArray(loggedResults[0]), true);
     assert.equal(loggedResults[0].length, 1);
     assert.equal(loggedResults[0][0].passportNo, null);
+    assert.equal(loggedResults[0][0].mrz.includes('L898902C37'), true);
     assert.equal(loggedResults[0][0].expiry, '2012-04-15');
     assert.equal(loggedResults[0][0].firstName, 'ANNA MARIA');
     assert.equal(loggedResults[0][0].accepted, true);
@@ -276,6 +282,7 @@ vm.runInNewContext(script, context);
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(loggedResults.length, 2);
     assert.equal(loggedResults[1][0].passportNo, null);
+    assert.equal(loggedResults[1][0].mrz, null);
     assert.equal(loggedResults[1][0].expiry, null);
     assert.equal(loggedResults[1][0].name, null);
     assert.equal(loggedResults[1][0].accepted, false);
@@ -286,6 +293,7 @@ vm.runInNewContext(script, context);
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(loggedResults.length, 3);
     assert.equal(loggedResults[2][0].passportNo, null, 'rejected scans must not expose a candidate number as accepted');
+    assert.equal(loggedResults[2][0].mrz.includes('X00000000'), true, 'debug logs include the unverified OCR candidate');
     assert.equal(loggedResults[2][0].verifiedCount, 1);
     assert.equal(loggedResults[2][0].checks.passport, true);
 

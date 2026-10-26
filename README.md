@@ -81,6 +81,7 @@ scanner does not depend on it.
     <input type="hidden" name="travelers[0][passport_scan]"
              class="js-tjaup-passportscanner-input" disabled
              data-field-root=".traveler-row"
+             data-field-mrz=".traveler-mrz"
              data-field-passport-no=".traveler-passport-no"
              data-field-name=".traveler-name"
              data-field-first-name=".traveler-first-name"
@@ -117,6 +118,7 @@ scanner does not depend on it.
     <label>Issuing country code <input name="travelers[0][issuingCountryCode]" class="traveler-issuing-country-code"></label>
     <label>MRZ sex marker <input name="travelers[0][sex]" class="traveler-sex"></label>
     <label>Issuer optional data <input name="travelers[0][optionalData]" class="traveler-optional-data"></label>
+    <label>MRZ as read <textarea name="travelers[0][mrz]" class="traveler-mrz" rows="2" readonly></textarea></label>
     <label>Passport image <input type="file" name="travelers[0][passportImg]" class="traveler-passport-image" accept="image/jpeg,image/png,image/webp"></label>
   </div>
   <button type="submit">Save after checking the passport</button>
@@ -169,13 +171,14 @@ $(document).on('passportscanner:result', '.js-tjaup-passportscanner-input', func
     const { fields, checks } = event.originalEvent.detail;
     const passportNo = checks.passport ? fields.passportNo : undefined;
     const firstName = fields.firstName;
+    const mrz = fields.mrz; // OCR-read lines; verify against the document.
     // Use these values in your form state after the traveler verifies them.
 });
 ```
 
 The scanner input is never mapped to the passport number automatically. Map
 the separate passport number field with `data-field-passport-no` or
-`data-field-passport`. Map other fields with
+`data-field-passport`. Map the OCR-read MRZ with `data-field-mrz`. Map other fields with
 `data-field-name`, `data-field-first-name`, `data-field-last-name`,
 `data-field-title`, `data-field-gender`, `data-field-dob`,
 `data-field-expiry`, `data-field-nationality`,
@@ -208,6 +211,7 @@ scanner container. CSS selectors or DOM elements can be used for fields.
 <input id="issuing-country-code" name="issuingCountryCode">
 <input id="sex" name="sex">
 <input id="optional-data" name="optionalData">
+<textarea id="mrz" name="mrz" rows="2" readonly></textarea>
 <input id="passport-image" name="passportImg" type="file">
 <div id="scanner"></div>
 </div>
@@ -217,6 +221,7 @@ PassportScanner.init({
     container: '#scanner',
     fieldRoot: '.traveler-row',
     fields: {
+        mrz: '#mrz',
         name: '#name',
         firstName: '#first-name',
         lastName: '#last-name',
@@ -285,18 +290,22 @@ the browser console. For class-based inputs, set `data-log-results="true"` on
 the scanner input. A log labeled `PassportScanner scan results` contains an
 array with one object for each scan. It includes every supported MRZ value;
 unread or unverified values are `null`, for example
-`[{ passportNo: null, dob: '1974-08-12', expiry: null, ... }]`. The key for
+`[{ passportNo: null, dob: '1974-08-12', expiry: null, mrz: '...', ... }]`. The key for
 passport expiry is `expiry`, even if your form input is named `passportExp`.
 When a scan fails verification, all field values are `null`; `accepted`,
-`verifiedCount`, and `checks` explain which checks passed. The image and raw
-OCR text are never logged. This option exposes accepted passport details in
-the local browser console, so enable it only while debugging.
+`verifiedCount`, and `checks` explain which checks passed. The `mrz` property
+contains the selected, normalized OCR-read MRZ candidate even on a failed
+scan, or `null` if no candidate was found. It may contain incorrect or
+unverified characters. The image and full OCR text are never logged.
+MRZ lines contain sensitive passport details, so enable console logging only
+while debugging.
 
 `detail.fields` includes every accepted MRZ value, even when no form field is
 mapped to it:
 
 | Field | Value |
 | --- | --- |
+| `mrz` | Selected OCR-read MRZ lines separated by a newline; verify the text against the passport |
 | `name`, `firstName`, `lastName` | Readable MRZ name and parts |
 | `passport`, `passportNo` | Same passport number, only when its check digit passes |
 | `dob`, `expiry` | Dates, only when their check digits and dates are valid |
@@ -318,7 +327,7 @@ fits native HTML `type="date"` inputs. MRZ dates have no time zone; time
 tokens represent midnight UTC. Legacy `ymd` and `dmy` settings remain
 supported.
 
-The result event has `detail.fields`, `detail.checks`,
+The result event has `detail.fields` (including `mrz`), `detail.checks`,
 `detail.verifiedCount` (2 or 3), and `detail.complete`. `detail.checks`
 contains boolean `passport`, `dob`, `expiry`, `optionalData`, and `composite`
 MRZ check results. It does not contain the passport image. Verify every
