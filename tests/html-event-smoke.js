@@ -11,6 +11,12 @@ const element = (attributes = {}) => ({
     hidden: false,
     value: '',
     files: [],
+    classList: {
+        values: new Set(),
+        add(...names) { names.forEach(name => this.values.add(name)); },
+        remove(...names) { names.forEach(name => this.values.delete(name)); },
+        contains(name) { return this.values.has(name); }
+    },
     getAttribute(name) { return this.attributes[name] ?? null; },
     addEventListener(name, callback) { this.listeners[name] = callback; },
     dispatchEvent(event) {
@@ -122,10 +128,14 @@ vm.runInNewContext(script, context);
     assert.equal(availabilityRequests, 0);
 
     const scanInput = controls['#passport-scanner-1-file'];
+    const scanStatus = controls['#passport-scanner-1-status'] ||= element();
     assert.equal(typeof scanInput.listeners.change, 'function');
     scanInput.files = [{ type: 'image/jpeg', name: 'passport.jpg' }];
     scanInput.listeners.change.call(scanInput);
+    await Promise.resolve();
+    assert.equal(scanStatus.classList.contains('is-scanning'), true);
     await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(scanStatus.classList.contains('is-success'), true);
 
     assert.equal(passport.value, '');
     assert.equal(passportNumber.value, 'L898902C3');
@@ -166,6 +176,7 @@ vm.runInNewContext(script, context);
     scanInput.listeners.change.call(scanInput);
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(result.verifiedCount, 2);
+    assert.equal(scanStatus.classList.contains('is-partial'), true);
     assert.equal(result.checks.passport, false);
     assert.equal('passport' in result.fields, false);
     assert.equal('passportNo' in result.fields, false);
@@ -199,6 +210,7 @@ vm.runInNewContext(script, context);
     scanInput.listeners.change.call(scanInput);
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(result, undefined);
+    assert.equal(scanStatus.classList.contains('is-error'), true);
     assert.equal(passportNumber.value, 'L898902C3');
 
     recognizedText = mrz;

@@ -97,8 +97,8 @@ scanner does not depend on it.
              data-field-optional-data=".traveler-optional-data"
              data-field-passport-img=".traveler-passport-image"
              data-date-format="Y-m-d"
-             data-auto-capture-count="1"
-             data-auto-capture-hold-seconds="0"
+             data-auto-capture-count="3"
+             data-auto-capture-hold-seconds="2"
              data-log-results="false"
              data-asset-base-url="/assets/passportscanner/"
              data-country-names='{"MY":"Malaysia","SG":"Singapore","US":"United States"}'>
@@ -124,6 +124,10 @@ scanner does not depend on it.
 <script src="/assets/passportscanner/passport-scanner.js" defer></script>
 ```
 
+The example captures 3 automatic camera frames over 2 seconds. These are
+explicit example settings; omitting both attributes uses the scanner's default
+of 4 frames over 3 seconds. Uploaded images are always scanned once.
+
 The scanner input is separate from the `passportNo` form field and is never
 filled with the passport number. The mapped `passportNo` field receives a
 verified number. The result also contains the same number in both
@@ -136,6 +140,15 @@ Add your application's form action and CSRF protection before saving.
 The script fills all mapped inputs directly after a usable scan. No result
 handler or jQuery code is needed to copy the passport number, dates, or other
 details into the form.
+
+The status text pulses blue while scanning. It turns green when the scanner
+reads all core details and a readable name, orange when a usable scan has
+missing details or an image attachment fails, and red when scanning fails.
+Animation is disabled when the browser requests reduced motion. To customize
+the colors in your application's CSS, override
+`.passport-scanner-status.is-scanning`, `.is-success`, `.is-partial`, and
+`.is-error` with a more specific selector such as
+`.traveler-row .passport-scanner-status.is-success`.
 
 `data-field-root` scopes selectors to the nearest matching ancestor. Repeat
 the `.traveler-row` markup with a new form index for more travelers; each scan
@@ -248,8 +261,8 @@ time, while image uploads remain independent.
 | `fieldRoot` | Ancestor selector or element used to scope field selectors |
 | `dateFormat` | PHP `date_format()` style for `dob` and `expiry`; default `Y-m-d` |
 | `countryNames` | Map country codes such as `MY` to form option values |
-| `autoCaptureCount` | Total automatic camera frames, including the first readable frame; integer 1–10 |
-| `autoCaptureHoldSeconds` | Time over which automatic camera frames are collected; 0–30 seconds |
+| `autoCaptureCount` | Total automatic camera frames, including the first readable frame; integer 1–10, default 4 |
+| `autoCaptureHoldSeconds` | Time over which automatic camera frames are collected; 0–30 seconds, default 3 |
 | `assetBaseUrl` | URL of the published `dist/` directory; inferred from a script tag |
 | `logResults` | Log an array containing one complete result object for each scan; default `false` |
 

@@ -78,6 +78,12 @@
             '.passport-scanner-button-primary:hover{background:#19598e}',
             '.passport-scanner-file{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}',
             '.passport-scanner-status{flex:1 1 240px;color:#7a728c;font-size:13px;line-height:1.4}',
+            '.passport-scanner-status.is-scanning{color:#0b5ed7;animation:passport-scanner-status-pulse 1s ease-in-out infinite}',
+            '.passport-scanner-status.is-success{color:#198754}',
+            '.passport-scanner-status.is-partial{color:#b45309}',
+            '.passport-scanner-status.is-error{color:#b42318}',
+            '@keyframes passport-scanner-status-pulse{0%,100%{opacity:1}50%{opacity:.35}}',
+            '@media (prefers-reduced-motion:reduce){.passport-scanner-status.is-scanning{animation:none}}',
             '.passport-scanner-camera-view{position:relative;width:100%;aspect-ratio:4/3;max-height:min(60vh,560px);margin:10px 0;overflow:hidden;background:#171520}',
             '.passport-scanner-preview{display:block;width:100%;height:100%;object-fit:cover}',
             '.passport-scanner-guide{--guide-color:#fff;position:absolute;left:6%;right:6%;top:50%;transform:translateY(-50%);aspect-ratio:1.42;border:2px solid var(--guide-color);border-radius:6px;box-shadow:0 0 0 999px rgba(0,0,0,.22);pointer-events:none}',
@@ -139,10 +145,13 @@
         return config;
     }
 
-    function setStatus(message, ui) {
+    function setStatus(message, ui, state) {
         ui = ui || activeUi;
         var status = ui && findElement(ui.status);
-        if (status) status.textContent = message;
+        if (!status) return;
+        status.textContent = message;
+        status.classList.remove('is-scanning', 'is-success', 'is-partial', 'is-error');
+        if (state) status.classList.add('is-' + state);
     }
 
     function setCameraGuideState(ui, state) {
@@ -699,7 +708,8 @@
 
         setStatus(hasCompletePassportDetails(details)
             ? 'Passport details filled. Please verify each field before saving.'
-            : 'Verified passport details filled. Check the image and enter any missing or incorrect details before saving.', ui);
+            : 'Verified passport details filled. Check the image and enter any missing or incorrect details before saving.',
+            ui, hasCompletePassportDetails(details) ? 'success' : 'partial');
         logScanResults(values, ui, details, true);
         (ui.resultTarget || ui.element).dispatchEvent(new CustomEvent('passportscanner:result', {
             bubbles: true,
@@ -794,7 +804,7 @@
     async function scanImage(file, ui, options) {
         options = options || {};
         if (!file) return false;
-        if (!options.silent) setStatus('Reading passport MRZ...', ui);
+        if (!options.silent) setStatus('Reading passport MRZ...', ui, 'scanning');
         var worker = options.worker;
         try {
             if (!worker) {
@@ -901,7 +911,7 @@
                 autoScanWorkerPromise = null;
                 if (failedWorker) failedWorker.then(function(currentWorker) { return currentWorker.terminate(); }).catch(function() {});
             }
-            if (!options.silent && activeUi === ui) setStatus((error && error.message) || 'Passport scan failed. Choose a clearer image and try again.', ui);
+            if (!options.silent && activeUi === ui) setStatus((error && error.message) || 'Passport scan failed. Choose a clearer image and try again.', ui, 'error');
             return false;
         } finally {
             if (worker && !options.worker) await worker.terminate();
@@ -933,10 +943,10 @@
             var cropRegion = getCameraMrzRegion(ui);
             var initialSample = await captureCameraSample(video, cropRegion);
             if (initialSample && activeUi === ui && activeVideo === video && sequence === cameraSequence) {
-                setStatus('Starting passport reader...', ui);
+                setStatus('Starting passport reader...', ui, 'scanning');
                 var worker = await getAutoScanWorker();
                 if (activeUi !== ui || activeVideo !== video || sequence !== cameraSequence) return;
-                setStatus('Reading passport MRZ...', ui);
+                setStatus('Reading passport MRZ...', ui, 'scanning');
                 var found = await scanImage(initialSample.file, ui, {
                     camera: true,
                     autoCapture: true,
@@ -959,7 +969,7 @@
                     setCameraGuideState(ui, 'steady');
                     setStatus(heldCount === 0 ? 'MRZ detected. Capturing now.'
                         : holdMs === 0 ? 'MRZ detected. Capturing ' + ui.autoCaptureCount + ' frames.'
-                        : 'MRZ detected. Hold steady for ' + ui.autoCaptureHoldSeconds + ' seconds.', ui);
+                        : 'MRZ detected. Hold steady for ' + ui.autoCaptureHoldSeconds + ' seconds.', ui, 'scanning');
                     for (var i = 1; i <= heldCount; i++) {
                         var captureAt = holdStart + Math.round(holdMs * i / heldCount);
                         await new Promise(function(resolve) { setTimeout(resolve, Math.max(0, captureAt - Date.now())); });
@@ -968,11 +978,11 @@
                         if (heldSample) heldSamples.push(heldSample);
                         if (i < heldCount && holdMs > 0) {
                             var remainingSeconds = Math.max(1, Math.ceil((holdStart + holdMs - Date.now()) / 1000));
-                            setStatus('Hold steady for ' + remainingSeconds + ' more second' + (remainingSeconds === 1 ? '' : 's') + '.', ui);
+                            setStatus('Hold steady for ' + remainingSeconds + ' more second' + (remainingSeconds === 1 ? '' : 's') + '.', ui, 'scanning');
                         }
                     }
                     if (!hasCompletePassportDetails(best.details)) {
-                        setStatus('Comparing passport captures...', ui);
+                        setStatus('Comparing passport captures...', ui, 'scanning');
                         heldSamples.sort(function(a, b) { return b.sharpness - a.sharpness; });
                         for (var j = 0; j < heldSamples.length; j++) {
                             if (activeUi !== ui || activeVideo !== video || sequence !== cameraSequence) return;
@@ -999,20 +1009,22 @@
                     }
                     if (activeUi !== ui || activeVideo !== video || sequence !== cameraSequence) return;
                     applyPassportDetails(best.details, ui);
-                    var attached = attachPassportImage(best.sample.file, ui);
+                    var imageExpected = Boolean(ui.fields.passportImg);
+                    var attached = imageExpected && attachPassportImage(best.sample.file, ui);
                     var complete = hasCompletePassportDetails(best.details);
-                    setStatus(!attached
+                    setStatus(imageExpected && !attached
                         ? 'Passport details read, but the image could not be attached. Choose it in Passport Image before saving.'
                         : complete
-                            ? 'Passport details and image filled. Verify each field before saving.'
-                            : 'Passport image captured. Some details were not read; fill the missing fields and verify before saving.', ui);
+                            ? 'Passport details filled. Verify each field before saving.'
+                            : 'Some details were not read; fill the missing fields and verify before saving.',
+                        ui, imageExpected && !attached || !complete ? 'partial' : 'success');
                     stopCamera();
                     return;
                 }
             }
         } catch (error) {
             if (activeUi === ui && sequence === cameraSequence) setCameraGuideState(ui, 'invalid');
-            if (activeUi === ui && sequence === cameraSequence) setStatus((error && error.message) || 'Auto scan failed. Try Capture & scan or choose an image.', ui);
+            if (activeUi === ui && sequence === cameraSequence) setStatus((error && error.message) || 'Auto scan failed. Try Capture & scan or choose an image.', ui, 'error');
             retryDelay = 5000;
         } finally {
             autoScanBusy = false;
@@ -1021,7 +1033,7 @@
         if (activeUi === ui && activeVideo === video && sequence === cameraSequence) {
             if (retryDelay === 1200) setStatus(candidate
                 ? 'MRZ detected. Hold the passport steady for auto capture.'
-                : 'MRZ not readable. Reposition both lines inside the guide.', ui);
+                : 'MRZ not readable. Reposition both lines inside the guide.', ui, 'scanning');
             scheduleAutoScan(ui, retryDelay);
         }
     }
@@ -1087,13 +1099,13 @@
                 findElement(ui.cameraPanel).hidden = false;
                 await activeVideo.play();
                 if (activeUi === ui) {
-                    setStatus('Looking for passport details. Keep the passport steady with the MRZ lines visible.', ui);
+                    setStatus('Looking for passport details. Keep the passport steady with the MRZ lines visible.', ui, 'scanning');
                     scheduleAutoScan(ui, 700);
                 }
             } catch (error) {
                 if (activeUi === ui) {
                     stopCamera();
-                    setStatus((error && error.message) || 'Camera access was unavailable. Choose an image instead.', ui);
+                    setStatus((error && error.message) || 'Camera access was unavailable. Choose an image instead.', ui, 'error');
                 }
             }
         });
@@ -1107,7 +1119,7 @@
                 var file = this.files && this.files[0];
                 if (!file || activeUi !== ui || ui.attachingPassportImage) return;
                 if (file.type === 'application/pdf') {
-                    setStatus('PDF attached. Choose a JPG or PNG image to scan passport details.', ui);
+                    setStatus('PDF attached. Choose a JPG or PNG image to scan passport details.', ui, 'error');
                     return;
                 }
                 scanImage(file, ui);
@@ -1120,7 +1132,7 @@
                 autoScanTimer = null;
             }
             if (!activeVideo || !activeVideo.videoWidth || !activeVideo.videoHeight) {
-                setStatus('Camera is not ready yet. Please wait and try again.', ui);
+                setStatus('Camera is not ready yet. Please wait and try again.', ui, 'scanning');
                 return;
             }
             var cropRegion = getCameraMrzRegion(ui);
@@ -1131,14 +1143,14 @@
                 stopCamera();
                 if (blob) {
                     var imageFile = new File([blob], 'passport-camera.jpg', { type: 'image/jpeg' });
-                    var attached = attachPassportImage(imageFile, ui);
-                    scanImage(imageFile, ui, { camera: true, cropRegion: cropRegion }).then(function() {
-                        if (!attached && activeUi === ui) {
-                            setStatus('Passport details scanned, but the image could not be attached. Choose the image in Passport Image before saving.', ui);
+                    var attachmentFailed = Boolean(ui.fields.passportImg) && !attachPassportImage(imageFile, ui);
+                    scanImage(imageFile, ui, { camera: true, cropRegion: cropRegion }).then(function(scanned) {
+                        if (scanned && attachmentFailed && activeUi === ui) {
+                            setStatus('Passport details scanned, but the image could not be attached. Choose the image in Passport Image before saving.', ui, 'partial');
                         }
                     });
                 }
-                else setStatus('Could not capture the image. Please try again or choose an image.', ui);
+                else setStatus('Could not capture the image. Please try again or choose an image.', ui, 'error');
             }, 'image/jpeg', 0.92);
         });
         findElement(ui.scanInput).addEventListener('change', async function() {
@@ -1146,15 +1158,17 @@
             this.value = '';
             if (!file) return;
             try {
-                if (file.type === 'image/webp' || /\.webp$/i.test(file.name || '')) setStatus('Preparing WebP image...', ui);
+                if (file.type === 'image/webp' || /\.webp$/i.test(file.name || '')) setStatus('Preparing WebP image...', ui, 'scanning');
                 var uploadFile = await normalizeSelectedImage(file);
                 if (activeUi !== ui) return;
-                if (!attachPassportImage(uploadFile, ui)) {
-                    setStatus('Image selected for scanning, but it could not be attached to the passport upload field. Please choose it there too.', ui);
-                }
-                scanImage(uploadFile, ui);
+                var attachmentFailed = Boolean(ui.fields.passportImg) && !attachPassportImage(uploadFile, ui);
+                scanImage(uploadFile, ui).then(function(scanned) {
+                    if (scanned && attachmentFailed && activeUi === ui) {
+                        setStatus('Passport details scanned, but the image could not be attached. Choose the image in Passport Image before saving.', ui, 'partial');
+                    }
+                });
             } catch (error) {
-                setStatus((error && error.message) || 'Could not prepare the selected image. Try a JPG or PNG image.', ui);
+                setStatus((error && error.message) || 'Could not prepare the selected image. Try a JPG or PNG image.', ui, 'error');
             }
         });
 
