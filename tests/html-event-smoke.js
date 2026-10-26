@@ -168,6 +168,17 @@ vm.runInNewContext(script, context);
     assert.equal(loggedResults.length, 0, 'console logging is off by default');
 
     result = undefined;
+    const noisyNameLine = 'P<UTOERIKSSON<<ANNA<MARIA<<<L<'.padEnd(44, 'L');
+    recognizedText = 'PSAND\nPSAND' + noisyNameLine + '\n' + mrz.split('\n')[1];
+    scanInput.files = [{ type: 'image/jpeg', name: 'noisy-name-line.jpg' }];
+    scanInput.listeners.change.call(scanInput);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(result.fields.name, 'ANNA MARIA ERIKSSON');
+    assert.equal(result.fields.firstName, 'ANNA MARIA');
+    assert.equal(result.fields.lastName, 'ERIKSSON');
+    assert.equal(result.fields.mrz.startsWith('P<UTO'), true, 'stray OCR text must not prefix the MRZ');
+
+    result = undefined;
     recognizedText = misleadingMrz + '\n' + mrz;
     scanInput.files = [{ type: 'image/jpeg', name: 'multiple-mrz-candidates.jpg' }];
     scanInput.listeners.change.call(scanInput);

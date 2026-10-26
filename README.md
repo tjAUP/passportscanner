@@ -321,6 +321,11 @@ mapped to it:
 personal number. MRZ scanning cannot read details that appear only in the
 passport's visual area or electronic chip.
 
+MRZ names have no check digit. The scanner removes filler characters that OCR
+may mistake for letters and retries rotated uploads when the name is missing,
+but it cannot verify name spelling. Always compare filled names with the
+passport before saving.
+
 `dateFormat` accepts PHP date letters such as `Y/m/d`, `y/m/d`, and `d m y`.
 Escape a format letter with `\` to print it literally. The default `Y-m-d`
 fits native HTML `type="date"` inputs. MRZ dates have no time zone; time

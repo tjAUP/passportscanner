@@ -345,9 +345,11 @@
         }).filter(Boolean);
 
         for (var i = 0; i < lines.length; i++) {
-            var start = lines[i].search(/P(?:<|[A-Z])[A-Z]{3}/);
+            var start = lines[i].search(/P<[A-Z]{3}/);
+            if (start < 0) start = lines[i].search(/P[A-Z][A-Z]{3}/);
             if (start < 0) continue;
             var firstLine = lines[i].slice(start);
+            if (!firstLine.includes('<')) continue;
             var nextIndex = i + 1;
             var secondLine = '';
 
@@ -383,10 +385,14 @@
 
     function findMrzNameLine(text) {
         var lines = text.toUpperCase().split(/\r?\n/);
-        for (var i = 0; i < lines.length; i++) {
-            var line = lines[i].replace(/[«‹〈]/g, '<').replace(/[^A-Z0-9<]/g, '');
-            var start = line.search(/P(?:<|[A-Z])[A-Z]{3}/);
-            if (start >= 0 && line.length - start >= 12) return line.slice(start, start + 44).padEnd(44, '<');
+        for (var strict = 1; strict >= 0; strict--) {
+            for (var i = 0; i < lines.length; i++) {
+                var line = lines[i].replace(/[«‹〈]/g, '<').replace(/[^A-Z0-9<]/g, '');
+                var start = line.search(strict ? /P<[A-Z]{3}/ : /P[A-Z][A-Z]{3}/);
+                if (start >= 0 && line.length - start >= 12 && line.slice(start).includes('<')) {
+                    return line.slice(start, start + 44).padEnd(44, '<');
+                }
+            }
         }
         return '';
     }
@@ -471,7 +477,10 @@
         var parts;
         if (separator >= 0) {
             var surnamePart = field.slice(0, separator).replace(/</g, ' ').trim();
-            var givenNamePart = field.slice(separator + 2).replace(/</g, ' ').trim();
+            var givenField = field.slice(separator + 2)
+                .replace(/<{2,}.*$/, '')
+                .replace(/[<LK]{5,}$/, '');
+            var givenNamePart = givenField.replace(/</g, ' ').trim();
             parts = [givenNamePart, surnamePart].filter(Boolean).join(' ').split(/\s+/);
         } else {
             parts = field.split(/<+/).map(function(part) { return part.trim(); }).filter(Boolean);
@@ -484,7 +493,7 @@
         }
         var fullName = parts.join(' ').replace(/[^A-Z '-]/g, '').trim();
         var surname = separator >= 0 ? normalizeMrzNamePart(field.slice(0, separator)) : '';
-        var givenNames = separator >= 0 ? normalizeMrzNamePart(field.slice(separator + 2)) : fullName;
+        var givenNames = separator >= 0 ? normalizeMrzNamePart(givenField) : fullName;
 
         return {
             fullName: fullName,
@@ -893,12 +902,12 @@
             }
 
             var details = await readOrientation(file);
-            if (!options.camera && !hasUsablePassportDetails(details) && window.createImageBitmap) {
+            if (!options.camera && (!hasUsablePassportDetails(details) || !details.nameLooksReadable) && window.createImageBitmap) {
                 for (var rotation of [90, 180, 270]) {
                     var rotatedImage = await rotateImage(file, rotation);
                     var rotatedDetails = await readOrientation(rotatedImage);
                     if (isBetterMrzCandidate(rotatedDetails, details)) details = rotatedDetails;
-                    if (hasUsablePassportDetails(details)) break;
+                    if (hasUsablePassportDetails(details) && details.nameLooksReadable) break;
                     if (activeUi !== ui) return;
                 }
             }
