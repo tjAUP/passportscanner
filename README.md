@@ -101,6 +101,8 @@ scanner does not depend on it.
              data-auto-capture-count="3"
              data-auto-capture-hold-seconds="2"
              data-log-results="false"
+             data-language="en"
+             data-status-messages='{}'
              data-asset-base-url="/assets/passportscanner/"
              data-country-names='{"MY":"Malaysia","SG":"Singapore","US":"United States"}'>
     <label>Date of birth <input type="date" name="travelers[0][dob]" class="traveler-dob"></label>
@@ -144,8 +146,15 @@ handler or jQuery code is needed to copy the passport number, dates, or other
 details into the form.
 
 The status text pulses blue while scanning. It turns green when the scanner
-reads all core details and a readable name, orange when a usable scan has
+reads all core details and a readable name, yellow when a usable scan has
 missing details or an image attachment fails, and red when scanning fails.
+Partial results use a pale yellow background with dark text for readability.
+Result messages include a tick (success), warning triangle (partial), or
+cross (failure). These built-in icons need no Font Awesome or external files.
+Messages use short instructions: "Done. Check all details before saving."
+for success, "Some details are missing. Fill them in and check all details."
+for partial results, and "Cannot read this passport. Try a clearer photo. No
+details changed." when too few details can be read.
 Animation is disabled when the browser requests reduced motion. To customize
 the colors in your application's CSS, override
 `.passport-scanner-status.is-scanning`, `.is-success`, `.is-partial`, and
@@ -243,6 +252,8 @@ PassportScanner.init({
     autoCaptureCount: 3,
     autoCaptureHoldSeconds: 2,
     assetBaseUrl: '/assets/passportscanner/',
+    language: 'en',
+    statusMessages: {},
     logResults: false
 });
 </script>
@@ -269,7 +280,9 @@ time, while image uploads remain independent.
 | `autoCaptureCount` | Total automatic camera frames, including the first readable frame; integer 1–10, default 4 |
 | `autoCaptureHoldSeconds` | Time over which automatic camera frames are collected; 0–30 seconds, default 3 |
 | `assetBaseUrl` | URL of the published `dist/` directory; inferred from a script tag |
-| `logResults` | Log an array containing one complete result object for each scan; default `false` |
+| `language` | Status language: `en` (English, default), `ms` (Malay), or `zh` (Simplified Chinese); unknown languages fall back to English |
+| `statusMessages` | Optional per-instance message overrides; default `{}`. Missing keys use the selected language |
+| `logResults` | Log ordered `{field, value}` rows for each scan; default `false` |
 
 By default, auto capture takes 4 frames over 3 seconds. Set
 `autoCaptureCount: 1` to capture immediately after the first readable MRZ
@@ -279,6 +292,62 @@ chosen count evenly across the hold time. The scanner rounds and limits an
 out-of-range count to 1–10 and limits hold time to 0–30 seconds. These options
 apply to automatic camera capture; the manual **Capture & scan** button takes
 one frame, and uploaded images are scanned once.
+
+### Status language and wording
+
+Set `language: 'ms'` or `language: 'zh'` in the scanner configuration, or use
+`data-language="ms"` on the scanner input. Regional codes such as `ms-MY`
+and `zh-CN` use the base language. English is used when no language is set.
+Each scanner instance can use a different language. This changes status text
+only; button labels, OCR language, passport results, and date formats stay
+independent.
+
+Use `statusMessages` to change any message or provide another language.
+For example, pass these options alongside your existing field mappings:
+
+```js
+language: 'en',
+statusMessages: {
+    success: 'Done. Check all details before saving.',
+    partial: 'Some details are missing. Fill them in and check all details.',
+    unreadable: 'Cannot read this passport. Try a clearer photo. No details changed.',
+    hold: 'Hold still for {seconds} seconds.',
+    capturingMany: 'Taking {count} photos. Hold still.'
+}
+```
+
+For HTML, use `data-status-messages='{"success":"Done. Check all details before saving."}'`.
+Yii2 consumers can pass `language` and `statusMessages` inside the widget's
+`scannerOptions`. Translations are plain text, never HTML. Keep `{seconds}`
+and `{count}` where you want the timer or photo count to appear. Keep the
+reminder to check all details before saving in your result messages.
+
+All supported message keys:
+
+| Key | When shown |
+| --- | --- |
+| `ready` | Before scanning |
+| `starting` | Starting the scanner |
+| `reading` | Reading a passport |
+| `capturing` | Taking one photo |
+| `capturingMany` | Taking multiple photos; supports `{count}` |
+| `hold` | Camera countdown; supports `{seconds}` |
+| `comparing` | Checking captured photos |
+| `found` | Passport found; keep still |
+| `position` | Move the passport's two bottom lines into the guide |
+| `looking` | Camera looking for a passport |
+| `success` | All core details and a readable name found |
+| `partial` | Some details missing |
+| `imageMissing` | Details read but photo attachment failed |
+| `unreadable` | Too few details verified; fields unchanged |
+| `scanFailed` | Other scan error |
+| `autoFailed` | Automatic camera scan error |
+| `cameraFailed` | Camera could not open |
+| `cameraStarting` | Camera not yet ready |
+| `captureFailed` | Photo capture failed |
+| `pdf` | PDF cannot be scanned |
+| `preparing` | Preparing an image |
+| `imageFailed` | Image could not be prepared |
 
 `passport` is filled only when its MRZ check passes. `dob` and `expiry` also
 require valid MRZ checks. `passportImg` must be a file input if you want to

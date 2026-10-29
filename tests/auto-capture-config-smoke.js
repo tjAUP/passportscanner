@@ -13,6 +13,9 @@ function element(attributes = {}) {
         listeners: {},
         hidden: false,
         value: '',
+        messages: [],
+        set textContent(value) { this.messages.push(value); },
+        get textContent() { return this.messages.at(-1); },
         classList: { add() {}, remove() {} },
         getAttribute(name) { return this.attributes[name] ?? null; },
         addEventListener(name, callback) { this.listeners[name] = callback; },
@@ -137,6 +140,11 @@ async function runCase(settings, expectedCaptures, useAttributes = false, recogn
         assert.equal(loggedResults[0].find(row => row.field === 'passportNo').value, 'L898902C3');
     }
     if (expectRecoveredName) assert.equal(detail.fields.firstName, 'ANNA MARIA');
+    if (settings.statusMessages) {
+        const messages = controls['#passport-scanner-1-status'].messages;
+        assert.ok(messages.includes('Wait 0.12 seconds'), 'custom countdown substitutes seconds');
+        assert.equal(messages.at(-1), 'Selesai. Semak semua butiran sebelum simpan.', 'unmodified keys use instance language');
+    }
     assert.equal(captures.length - (useBitmap ? 1 : 0), expectedCaptures);
     window.PassportScanner.stop();
     return captures;
@@ -147,7 +155,8 @@ async function runCase(settings, expectedCaptures, useAttributes = false, recogn
     assert.ok(defaults.at(-1) - defaults[0] >= 2800, 'default capture should hold for three seconds');
     await runCase({ autoCaptureCount: 1 }, 1);
     await runCase({ autoCaptureCount: 1, logResults: true }, 1);
-    const counted = await runCase({ autoCaptureCount: 4, autoCaptureHoldSeconds: 0.12 }, 4);
+    const counted = await runCase({ autoCaptureCount: 4, autoCaptureHoldSeconds: 0.12,
+        language: 'ms', statusMessages: { hold: 'Wait {seconds} seconds' } }, 4);
     assert.ok(counted.at(-1) - counted[0] >= 80, 'counted samples should span the hold time');
     const timed = await runCase({ autoCaptureHoldSeconds: 0.12 }, 2);
     assert.ok(timed.at(-1) - timed[0] >= 80, 'time-only samples should span the hold time');

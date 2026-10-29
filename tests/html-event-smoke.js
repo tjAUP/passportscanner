@@ -140,6 +140,7 @@ vm.runInNewContext(script, context);
     assert.equal(scanStatus.classList.contains('is-scanning'), true);
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(scanStatus.classList.contains('is-success'), true);
+    assert.equal(scanStatus.textContent, 'Done. Check all details before saving.');
 
     assert.equal(passport.value, '');
     assert.equal(mrzField.value, mrz);
@@ -194,6 +195,7 @@ vm.runInNewContext(script, context);
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(result.verifiedCount, 2);
     assert.equal(scanStatus.classList.contains('is-partial'), true);
+    assert.equal(scanStatus.textContent, 'Some details are missing. Fill them in and check all details.');
     assert.equal(result.checks.passport, false);
     assert.equal('passport' in result.fields, false);
     assert.equal('passportNo' in result.fields, false);
@@ -228,6 +230,7 @@ vm.runInNewContext(script, context);
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(result, undefined);
     assert.equal(scanStatus.classList.contains('is-error'), true);
+    assert.equal(scanStatus.textContent, 'Cannot read this passport. Try a clearer photo. No details changed.');
     assert.equal(passportNumber.value, 'L898902C3');
 
     recognizedText = mrz;
@@ -313,5 +316,36 @@ vm.runInNewContext(script, context);
     assert.equal(loggedValue(2, 'verifiedCount'), 1);
     assert.equal(loggedValue(2, 'checks').passport, true);
 
-    console.log('MRZ scan filled fields, matched PHP date formats, and emitted a verified result');
+    const languages = [
+        ['ms-MY', '{}', 'Selesai. Semak semua butiran sebelum simpan.'],
+        ['zh-CN', '{}', '完成。保存前请检查所有资料。'],
+        ['unknown', '{}', 'Done. Check all details before saving.'],
+        ['fr', '{"success":"Terminé. Vérifiez les informations."}', 'Terminé. Vérifiez les informations.'],
+        ['en', '{"success":"<b>Check details</b>"}', '<b>Check details</b>'],
+        ['en', '{broken', 'Done. Check all details before saving.'],
+        ['en', '{"success":null}', 'Done. Check all details before saving.']
+    ];
+    for (const [index, [language, messages, expected]] of languages.entries()) {
+        passport.attributes['data-language'] = language;
+        passport.attributes['data-status-messages'] = messages;
+        recognizedText = mrz;
+        await window.PassportScanner.initFromElement(passport);
+        const prefix = `#passport-scanner-${formats.length + 5 + index}`;
+        const input = controls[prefix + '-file'];
+        const status = controls[prefix + '-status'];
+        input.files = [{ type: 'image/jpeg', name: 'synthetic.jpg' }];
+        input.listeners.change.call(input);
+        await new Promise(resolve => setTimeout(resolve, 0));
+        assert.equal(status.textContent, expected);
+        assert.equal(status.classList.contains('is-success'), true);
+        if (language === 'zh-CN') {
+            recognizedText = 'not a passport';
+            input.listeners.change.call(input);
+            await new Promise(resolve => setTimeout(resolve, 0));
+            assert.equal(status.textContent, '无法读取护照。请换一张更清晰的照片。资料未更改。');
+            assert.equal(status.classList.contains('is-error'), true);
+        }
+    }
+
+    console.log('MRZ fields, dates, events, and translated status messages worked');
 })().catch(error => { console.error(error); process.exitCode = 1; });
