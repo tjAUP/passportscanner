@@ -596,6 +596,108 @@
         }
     }
 
+    function findMrzNameBox(lines, details) {
+        if (!Array.isArray(lines) || !details || !details.mrzLine1) return null;
+        var prefix = details.mrzLine1.slice(0, 5);
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            var text = String(line.text || '').toUpperCase().replace(/[^A-Z0-9<]/g, '');
+            var box = line.bbox;
+            if (text.slice(0, 5) === prefix && text.length >= 30 && box &&
+                Number.isFinite(box.x0) && Number.isFinite(box.y0) &&
+                Number.isFinite(box.x1) && Number.isFinite(box.y1)) return box;
+        }
+        return null;
+    }
+
+    // The MRZ's long filler tail is a run of identical printed chevrons.
+    // Identify their shapes in pixels, not OCR letters: OCR often calls them K/L.
+    function findFillerStart(imageData) {
+        var width = imageData.width;
+        var height = imageData.height;
+        var data = imageData.data;
+        function ink(x, y) {
+            var offset = (y * width + x) * 4;
+            return (data[offset] + data[offset + 1] + data[offset + 2]) / 3 < 110;
+        }
+        var glyphs = [];
+        for (var x = 0; x < width; x++) {
+            var count = 0;
+            for (var y = 0; y < height; y++) if (ink(x, y)) count++;
+            if (count < 2) continue;
+            var last = glyphs[glyphs.length - 1];
+            if (last && last.end === x) last.end = x + 1;
+            else glyphs.push({ start: x, end: x + 1 });
+        }
+        if (glyphs.length < 36 || glyphs.length > 48) return null;
+        function chevron(glyph) {
+            var rows = [];
+            for (var row = 0; row < height; row++) {
+                for (var column = glyph.start; column < glyph.end; column++) {
+                    if (ink(column, row)) {
+                        rows.push({ y: row, left: column - glyph.start });
+                        break;
+                    }
+                }
+            }
+            if (rows.length < 6) return false;
+            var first = rows[0].y;
+            var span = rows[rows.length - 1].y - first + 1;
+            function leftAt(from, to) {
+                var selected = rows.filter(function(item) {
+                    var fraction = (item.y - first) / span;
+                    return fraction >= from && fraction < to;
+                });
+                return selected.length ? selected.reduce(function(sum, item) { return sum + item.left; }, 0) / selected.length : 0;
+            }
+            var glyphWidth = glyph.end - glyph.start;
+            return leftAt(0, 0.25) > glyphWidth * 0.35 &&
+                leftAt(0.75, 1) > glyphWidth * 0.35 &&
+                leftAt(0.35, 0.65) < glyphWidth * 0.3;
+        }
+        if (!chevron(glyphs[1])) return null; // P< must have a genuine '<'.
+        var firstFiller = glyphs.length;
+        while (firstFiller > 0 && chevron(glyphs[firstFiller - 1])) firstFiller--;
+        if (glyphs.length - firstFiller < 6 || firstFiller < 12 || firstFiller > 36) return null;
+        return Math.max(1, glyphs[firstFiller].start - 2);
+    }
+
+    async function prepareIsolatedMrzName(file, box, grayscale) {
+        var image = await createImageBitmap(file);
+        try {
+            var left = Math.max(0, Math.floor(box.x0));
+            var top = Math.max(0, Math.floor(box.y0));
+            var width = Math.min(image.width - left, Math.ceil(box.x1 - box.x0));
+            var height = Math.min(image.height - top, Math.ceil(box.y1 - box.y0));
+            if (width < 100 || height < 10 || height > image.height * 0.1 || top < image.height * 0.55) return null;
+            var probe = document.createElement('canvas');
+            probe.width = width;
+            probe.height = height;
+            var context = probe.getContext('2d');
+            context.drawImage(image, left, top, width, height, 0, 0, width, height);
+            var filler = findFillerStart(context.getImageData(0, 0, width, height));
+            if (!filler) return null;
+            var padding = 24;
+            var cropLeft = Math.max(0, left - 5);
+            var cropTop = Math.max(0, top - 4);
+            var cropWidth = Math.min(image.width - cropLeft, left + filler - cropLeft);
+            var cropHeight = Math.min(image.height - cropTop, height + 8);
+            var canvas = document.createElement('canvas');
+            canvas.width = cropWidth * 3 + padding * 2;
+            canvas.height = cropHeight * 3 + padding * 2;
+            context = canvas.getContext('2d');
+            context.fillStyle = '#fff';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            if (grayscale) context.filter = 'grayscale(1)';
+            context.drawImage(image, cropLeft, cropTop, cropWidth, cropHeight,
+                padding, padding, cropWidth * 3, cropHeight * 3);
+            var blob = await new Promise(function(resolve) { canvas.toBlob(resolve, 'image/png'); });
+            return blob ? new File([blob], 'passport-isolated-name.png', { type: 'image/png' }) : null;
+        } finally {
+            image.close();
+        }
+    }
+
     async function rotateImage(file, degrees) {
         var image = await createImageBitmap(file);
         try {
@@ -1006,6 +1108,34 @@
                 }
                 return details;
             }
+            async function readPreciseNameLine(imageFile, lines, details) {
+                if (options.camera || !hasUsablePassportDetails(details) ||
+                    details.nameLooksReadable || !worker.setParameters) return details;
+                var box = findMrzNameBox(lines, details);
+                if (!box) return details;
+                try {
+                    await worker.setParameters({ tessedit_pageseg_mode: 7, tessedit_char_whitelist: '' });
+                    var names = [];
+                    for (var variant of [false, true]) {
+                        var crop = await prepareIsolatedMrzName(imageFile, box, variant);
+                        if (!crop) break;
+                        var result = await withTimeout(worker.recognize(crop), 45000,
+                            'Passport name OCR timed out.');
+                        if (activeUi !== ui) return details;
+                        var line = findMrzNameLine(result.data.text || '');
+                        var parsed = parseMrzName(line);
+                        if (line.slice(0, 5) !== details.mrzLine1.slice(0, 5) ||
+                            !isReadableMrzName(line, parsed.fullName)) return details;
+                        names.push({ line: line, name: parsed.fullName });
+                    }
+                    if (names.length === 2 && names[0].name === names[1].name) {
+                        useMrzNameLine(details, names[0].line);
+                    }
+                } catch (error) {
+                    // Name retries must not change the verified passport number or dates.
+                }
+                return details;
+            }
             async function readOrientation(imageFile) {
                 var best = null;
                 var croppedImage = null;
@@ -1029,6 +1159,7 @@
                 var fullDetails = findBestMrzDetails(result.data.text || '', ui);
                 if (isBetterMrzCandidate(fullDetails, best)) best = fullDetails;
                 if (options.camera) return readNameLine(croppedImage, best);
+                best = await readPreciseNameLine(imageFile, result.data.lines, best);
                 if (!hasCompletePassportDetails(best) && window.createImageBitmap) {
                     if (worker.setParameters) {
                         await worker.setParameters({

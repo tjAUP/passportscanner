@@ -12,6 +12,13 @@ copy; the image attached to `passportImg` stays unchanged. Border removal is
 conservative and does not straighten tilted pages or remove busy backgrounds.
 Blurred text and unreadable names may still need manual entry.
 
+If the passport number and dates are readable but the MRZ name is damaged,
+the upload scanner also retries the first MRZ line. It detects the printed
+`<` filler shapes at the end of that line, crops them out of the OCR copy,
+and reads the remaining name twice. It fills the name only when both readings
+agree. It does not change the verified number or dates during this retry.
+Names still have no check digit, so check spelling against the passport.
+
 The browser code and bundled Tesseract.js assets are in `dist/`. There is no
 PHP class or framework dependency in this package.
 
