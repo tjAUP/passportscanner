@@ -487,6 +487,70 @@
         return '';
     }
 
+    // Only remove contiguous, nearly solid light/dark outer margins. Never
+    // search through document content or remove more than 20% from an edge.
+    function findUploadContentBounds(pixels) {
+        var width = pixels.width;
+        var height = pixels.height;
+        var data = pixels.data;
+        function blankLine(horizontal, position, start, end) {
+            var light = 0;
+            var dark = 0;
+            var count = end - start;
+            for (var i = start; i < end; i++) {
+                var offset = (horizontal ? position * width + i : i * width + position) * 4;
+                var low = Math.min(data[offset], data[offset + 1], data[offset + 2]);
+                var high = Math.max(data[offset], data[offset + 1], data[offset + 2]);
+                if (low >= 240 || data[offset + 3] < 16) light++;
+                if (high <= 70 && data[offset + 3] >= 16) dark++;
+            }
+            return count > 0 && Math.max(light, dark) / count >= 0.985;
+        }
+        function margin(horizontal, reverse, start, end) {
+            var length = horizontal ? height : width;
+            var limit = Math.floor(length * 0.2);
+            var removed = 0;
+            while (removed < limit && blankLine(horizontal, reverse ? length - removed - 1 : removed, start, end)) removed++;
+            // A huge blank area is ambiguous; leave that edge untouched.
+            return removed === limit ? 0 : removed;
+        }
+        var top = margin(true, false, Math.floor(width * 0.05), Math.ceil(width * 0.95));
+        var bottom = margin(true, true, Math.floor(width * 0.05), Math.ceil(width * 0.95));
+        var inset = Math.floor((height - top - bottom) * 0.05);
+        var left = margin(false, false, top + inset, height - bottom - inset);
+        var right = margin(false, true, top + inset, height - bottom - inset);
+        if (Math.max(top, bottom, left, right) < 3) return null;
+        return { left: left / width, top: top / height,
+            width: (width - left - right) / width, height: (height - top - bottom) / height };
+    }
+
+    async function prepareBorderlessUpload(file) {
+        var image = await createImageBitmap(file);
+        try {
+            // Bound the pixel scan cost even for large phone photos.
+            var scale = Math.min(1, 1024 / Math.max(image.width, image.height));
+            var probe = document.createElement('canvas');
+            probe.width = Math.max(1, Math.round(image.width * scale));
+            probe.height = Math.max(1, Math.round(image.height * scale));
+            var context = probe.getContext('2d');
+            context.drawImage(image, 0, 0, probe.width, probe.height);
+            var bounds = findUploadContentBounds(context.getImageData(0, 0, probe.width, probe.height));
+            if (!bounds) return null;
+            var left = Math.floor(bounds.left * image.width);
+            var top = Math.floor(bounds.top * image.height);
+            var width = Math.min(image.width - left, Math.ceil(bounds.width * image.width));
+            var height = Math.min(image.height - top, Math.ceil(bounds.height * image.height));
+            var canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            canvas.getContext('2d').drawImage(image, left, top, width, height, 0, 0, width, height);
+            var blob = await new Promise(function(resolve) { canvas.toBlob(resolve, 'image/png'); });
+            return blob ? new File([blob], 'passport-borderless.png', { type: 'image/png' }) : null;
+        } finally {
+            image.close();
+        }
+    }
+
     async function prepareMrzCrop(file, region) {
         var image = await createImageBitmap(file);
         try {
@@ -965,11 +1029,7 @@
                 var fullDetails = findBestMrzDetails(result.data.text || '', ui);
                 if (isBetterMrzCandidate(fullDetails, best)) best = fullDetails;
                 if (options.camera) return readNameLine(croppedImage, best);
-                if (hasUsablePassportDetails(best) && !best.nameLooksReadable && window.createImageBitmap) {
-                    croppedImage = await prepareMrzCrop(imageFile);
-                    return readNameLine(croppedImage, best);
-                }
-                if ((!best || !best.passportValid) && window.createImageBitmap) {
+                if (!hasCompletePassportDetails(best) && window.createImageBitmap) {
                     if (worker.setParameters) {
                         await worker.setParameters({
                             tessedit_pageseg_mode: 6,
@@ -981,7 +1041,7 @@
                     if (activeUi !== ui) return null;
                     var croppedDetails = findBestMrzDetails(result.data.text || '', ui);
                     if (isBetterMrzCandidate(croppedDetails, best)) best = croppedDetails;
-                    if ((!best || !best.passportValid) && worker.setParameters) {
+                    if (!hasCompletePassportDetails(best) && worker.setParameters) {
                         await worker.setParameters({ tessedit_pageseg_mode: 11 });
                         result = await withTimeout(worker.recognize(croppedImage), 45000, 'Passport OCR timed out. Try a smaller or clearer image.');
                         if (activeUi !== ui) return null;
@@ -993,9 +1053,22 @@
             }
 
             var details = await readOrientation(file);
+            var rotationSource = file;
+            if (!options.camera && !hasCompletePassportDetails(details) && window.createImageBitmap && activeUi === ui) {
+                try {
+                    var borderless = await prepareBorderlessUpload(file);
+                    if (borderless && activeUi === ui) {
+                        rotationSource = borderless;
+                        var borderlessDetails = await readOrientation(borderless);
+                        if (isBetterMrzCandidate(borderlessDetails, details)) details = keepReadableName(borderlessDetails, details);
+                    }
+                } catch (error) {
+                    // Optional preprocessing must not discard already verified fields.
+                }
+            }
             if (!options.camera && (!hasUsablePassportDetails(details) || !details.nameLooksReadable) && window.createImageBitmap) {
                 for (var rotation of [90, 180, 270]) {
-                    var rotatedImage = await rotateImage(file, rotation);
+                    var rotatedImage = await rotateImage(rotationSource, rotation);
                     var rotatedDetails = await readOrientation(rotatedImage);
                     if (isBetterMrzCandidate(rotatedDetails, details)) details = rotatedDetails;
                     if (hasUsablePassportDetails(details) && details.nameLooksReadable) break;

@@ -5,6 +5,13 @@ reads an uploaded image or camera frame locally, fills the form fields you
 choose, and can attach the image to a file input. It does not save forms,
 upload images, or send them to an OCR service.
 
+When an uploaded image does not give a complete result, the scanner retries
+after removing plain light or dark outer borders. This helps with images
+saved with a white margin or a dark frame. It only changes an internal OCR
+copy; the image attached to `passportImg` stays unchanged. Border removal is
+conservative and does not straighten tilted pages or remove busy backgrounds.
+Blurred text and unreadable names may still need manual entry.
+
 The browser code and bundled Tesseract.js assets are in `dist/`. There is no
 PHP class or framework dependency in this package.
 

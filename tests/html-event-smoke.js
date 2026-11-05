@@ -52,6 +52,8 @@ const optionalData = element();
 const dob = element();
 const expiry = element();
 const controls = {};
+let borderPixels = null;
+const recognizedFiles = [];
 const document = {
     currentScript: { src: 'https://example.test/assets/passportscanner/passport-scanner.js' },
     baseURI: 'https://example.test/',
@@ -63,7 +65,10 @@ const document = {
     getElementById() { return null; },
     createElement(tag) {
         if (tag === 'canvas') return {
-            getContext() { return { drawImage() {} }; },
+            getContext() { return { drawImage() {}, getImageData() {
+                if (!borderPixels) throw new Error('No border fixture');
+                return borderPixels;
+            } }; },
             toBlob(callback) { callback({ type: 'image/jpeg' }); }
         };
         return element();
@@ -100,7 +105,10 @@ const window = {
     Tesseract: {
         async createWorker() {
             return {
-                async recognize() { return { data: { text: recognizedQueue.shift() || recognizedText } }; },
+                async recognize(file) {
+                    recognizedFiles.push(file.name);
+                    return { data: { text: recognizedQueue.shift() || recognizedText } };
+                },
                 async terminate() {}
             };
         }
@@ -212,6 +220,36 @@ vm.runInNewContext(script, context);
     assert.equal(result.checks.passport, true);
     assert.equal(result.fields.passportNo, 'L898902C3');
     assert.equal(recognizedQueue.length, 0, 'a crop should retry an unverified passport number');
+    window.createImageBitmap = undefined;
+    context.createImageBitmap = undefined;
+
+    // A verified number alone must not stop retries for unreadable dates.
+    window.createImageBitmap = fakeBitmap;
+    context.createImageBitmap = fakeBitmap;
+    recognizedQueue = [mrz.replace('7408122', '7408123').replace('1204159', '1204158'), mrz];
+    scanInput.listeners.change.call(scanInput);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(result.verifiedCount, 3);
+    assert.equal(recognizedQueue.length, 0, 'dates also trigger a crop retry');
+
+    // Only a borderless OCR copy recovers this synthetic upload. The user's
+    // selected file remains the original, not the internal processed copy.
+    const pixels = new Uint8ClampedArray(100 * 100 * 4);
+    for (let y = 0; y < 100; y++) for (let x = 0; x < 100; x++) {
+        const shade = x < 5 || x >= 95 || y < 5 || y >= 95 ? 255 : 120;
+        pixels.set([shade, shade, shade, 255], (y * 100 + x) * 4);
+    }
+    borderPixels = { width: 100, height: 100, data: pixels };
+    const selectedFile = { type: 'image/jpeg', name: 'bordered-synthetic.jpg' };
+    scanInput.files = [selectedFile];
+    recognizedFiles.length = 0;
+    recognizedQueue = ['no MRZ', 'no MRZ', mrz];
+    scanInput.listeners.change.call(scanInput);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(result.verifiedCount, 3);
+    assert.deepEqual(recognizedFiles, ['bordered-synthetic.jpg', 'passport-mrz.jpg', 'passport-borderless.png']);
+    assert.equal(scanInput.files[0], selectedFile);
+    borderPixels = null;
     window.createImageBitmap = undefined;
     context.createImageBitmap = undefined;
 
